@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Heoooooon/fixen/main/assets/banner.jpg" alt="fixen — Fix your English from the command line" width="720">
+</p>
+
 # fixen
 
 > **Fix your English from the command line** — with the LLM you already have.
@@ -9,16 +13,9 @@
 
 You already talk to an LLM all day. `fixen` turns it into your personal proofreader: one tiny zero-dependency CLI that builds a correction prompt and pipes it into whatever is on your machine — `claude`, `codex`, `gjc`, `gemini`, `ollama`, any OpenAI-compatible API, or any shell command that reads a prompt and prints an answer. No accounts, no API keys (unless you want one), no vendor lock-in.
 
-```console
-$ fixen "I has a apple and she go to school yesterday"
-I have an apple, and she went to school yesterday.
-
-$ fixen -e -l Korean "he dont know nothing about it"
-Corrected: He doesn't know anything about it.
-Notes:
-- "dont" → "doesn't": 3인칭 단수 주어에는 does not을 사용합니다.
-- "know nothing" → "know anything": 이중 부정을 피했습니다.
-```
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Heoooooon/fixen/main/assets/demo.gif" alt="fixen demo: correcting English with explanations in Korean, and Japanese with -t" width="860">
+</p>
 
 And the part that makes it stick: `fixen install` hooks your AI chat CLIs so **every normal chat reply ends with a correction of what you typed**. You learn while you work, for free, without opening a single flashcard app.
 

@@ -3,6 +3,12 @@
   "version": "0.1.1",
   "description": "Fix your English from the command line — backend-agnostic corrector that works with claude, codex, gjc, gemini, ollama, or any OpenAI-compatible API.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Heoooooon/fixen.git"
+  },
+  "homepage": "https://github.com/Heoooooon/fixen#readme",
+  "bugs": "https://github.com/Heoooooon/fixen/issues",
   "bin": {
     "fixen": "bin/fixen.js"
   },

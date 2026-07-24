@@ -191,6 +191,81 @@ async function correct(sentence, opts) {
   return cleanOutput(raw);
 }
 
+// ---------------------------------------------------------------- install
+// Plants a correction rule into the global instruction files of installed
+// AI CLIs so that every chat reply ends with a correction of what the user
+// wrote. Reversible via `fixen uninstall`.
+
+const START_MARK = "<!-- fixen:start — managed by `fixen install`; run `fixen uninstall` to remove -->";
+const END_MARK = "<!-- fixen:end -->";
+const BLOCK_RE = /\n*<!-- fixen:start[\s\S]*?<!-- fixen:end -->\n*/g;
+
+const INSTALL_TARGETS = [
+  { name: "claude", base: path.join(os.homedir(), ".claude"), file: path.join(os.homedir(), ".claude", "CLAUDE.md") },
+  { name: "codex", base: path.join(os.homedir(), ".codex"), file: path.join(os.homedir(), ".codex", "AGENTS.md") },
+  // ~/.gjc/agent/AGENTS.md is gjc's user-level context file, injected into every session.
+  { name: "gjc", base: path.join(os.homedir(), ".gjc", "agent"), file: path.join(os.homedir(), ".gjc", "agent", "AGENTS.md") },
+];
+
+function ruleText({ target, lang, explain }) {
+  const t = target;
+  return `## ${t} check (fixen)
+
+The user is practicing ${t}. In EVERY reply, after answering normally, review the ${t} that the user themselves wrote in their latest message. Ignore quoted text, code, logs, file contents, and anything pasted rather than written by the user.
+
+If their ${t} contains grammar, spelling, or naturalness mistakes, end the reply with this footer:
+
+---
+fixen: <corrected version of what the user wrote>${explain ? `\nfixen note: <one short reason per fix, written in ${lang}>` : ""}
+
+Rules:
+- One corrected line per mistaken sentence; skip sentences that are already fine.
+- If the user's ${t} is fully correct and natural, or the message contains no user-written ${t}, append nothing — no footer at all.
+- The footer never replaces or shortens the actual answer.`;
+}
+
+function cmdInstall(opts) {
+  const block = `${START_MARK}\n${ruleText(opts)}\n${END_MARK}`;
+  for (const t of INSTALL_TARGETS) {
+    if (!fs.existsSync(t.base)) {
+      process.stdout.write(`skip  ${t.name}: ${t.base} not found (CLI not installed?)\n`);
+      continue;
+    }
+    fs.mkdirSync(path.dirname(t.file), { recursive: true });
+    const prev = fs.existsSync(t.file) ? fs.readFileSync(t.file, "utf8") : "";
+    const stripped = prev.replace(BLOCK_RE, "\n").trimEnd();
+    fs.writeFileSync(t.file, (stripped ? stripped + "\n\n" : "") + block + "\n");
+    process.stdout.write(`ok    ${t.name}: ${t.file}\n`);
+  }
+  process.stdout.write(`\nNew chat sessions of the CLIs above will now end replies with a ${opts.target} correction.\n`);
+}
+
+function cmdUninstall() {
+  for (const t of INSTALL_TARGETS) {
+    if (!fs.existsSync(t.file)) {
+      process.stdout.write(`-     ${t.name}: not installed\n`);
+      continue;
+    }
+    const prev = fs.readFileSync(t.file, "utf8");
+    if (!prev.includes(START_MARK)) {
+      process.stdout.write(`-     ${t.name}: not installed\n`);
+      continue;
+    }
+    const stripped = prev.replace(BLOCK_RE, "\n").trim();
+    if (stripped) fs.writeFileSync(t.file, stripped + "\n");
+    else fs.rmSync(t.file);
+    process.stdout.write(`ok    ${t.name}: removed\n`);
+  }
+}
+
+function cmdStatus() {
+  for (const t of INSTALL_TARGETS) {
+    const installed = fs.existsSync(t.file) &&
+      fs.readFileSync(t.file, "utf8").includes(START_MARK);
+    process.stdout.write(`${installed ? "on " : "off"}  ${t.name}: ${t.file}\n`);
+  }
+}
+
 // ---------------------------------------------------------------- CLI
 
 const HELP = `fixen ${VERSION} — corrects your writing (any language) using any LLM backend
@@ -199,6 +274,12 @@ Usage:
   fixen [options] <sentence...>       correct a sentence
   echo "sentence" | fixen [options]   correct stdin
   fixen [options]                     interactive mode (TTY)
+
+  fixen install [-t <lang>] [-e] [-l <lang>]
+      plant a rule into claude/codex/gjc global instructions so every normal
+      chat reply ends with a correction of what you typed
+  fixen uninstall                     remove that rule everywhere
+  fixen status                        show where the rule is installed
 
 Options:
   -b, --backend <name>   claude | codex | gjc | gemini | ollama | api
@@ -286,6 +367,11 @@ async function main() {
   opts.model ??= process.env.FIXEN_MODEL || cfg.model || undefined;
   opts.lang ??= cfg.lang || "English";
   opts.target ??= process.env.FIXEN_TARGET || cfg.target || "English";
+
+  const sub = opts.words[0];
+  if (sub === "install") { cmdInstall(opts); return; }
+  if (sub === "uninstall") { cmdUninstall(); return; }
+  if (sub === "status") { cmdStatus(); return; }
 
   if (!opts.command && !opts.backend) {
     opts.backend = detectBackend();

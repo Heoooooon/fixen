@@ -39,6 +39,28 @@ fixen -t Japanese "日本語の文"      # correct any language, not just Englis
 
 English is just the default. `-t/--target` (or `FIXEN_TARGET`, or `"target"` in the config) switches the language being corrected — `fixen -t French -e -l Korean "..."` corrects French and explains the fixes in Korean.
 
+## Chat mode: corrections inside your AI CLI
+
+The killer feature. `fixen install` plants a small rule into the global instructions of every AI CLI on your machine, so that **your normal chats** with them end with a correction of what *you* typed:
+
+```console
+$ fixen install
+ok    claude: ~/.claude/CLAUDE.md
+ok    codex:  ~/.codex/AGENTS.md
+ok    gjc:    ~/.gjc/agent/AGENTS.md
+
+$ gjc -p "hey what is capital of france? my dream is go to paris someday"
+The capital of France is Paris. ...
+
+---
+fixen: My dream is to go to Paris someday.
+```
+
+- Only fires when *your own* writing has mistakes — correct sentences, pasted code, logs, and quotes are left alone.
+- `fixen install -t Japanese` watches Japanese instead; `-e -l Korean` adds one-line reasons in Korean.
+- Managed via markers, so your existing CLAUDE.md/AGENTS.md content is untouched. `fixen uninstall` removes every trace; `fixen status` shows where it's active. Re-running `install` is idempotent.
+- Applies to new chat sessions.
+
 ## Backends
 
 Auto-detected in this order: `claude` → `codex` → `gjc` → `gemini` → `ollama` → `api` (if an API key is set). Pick one explicitly with `-b`:

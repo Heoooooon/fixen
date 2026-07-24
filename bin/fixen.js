@@ -51,6 +51,9 @@ function cleanOutput(text) {
   out = out.replace(/^```[a-z]*\n?/i, "").replace(/\n?```$/, "").trim();
   // strip a single pair of wrapping quotes
   if (/^".*"$/s.test(out)) out = out.slice(1, -1);
+  // strip a trailing chat-mode footer: with `fixen install` active, backend
+  // CLIs may append their own "---\nfixen: ..." to our one-shot correction
+  out = out.replace(/\n+-{3,}\s*\nfixen:[\s\S]*$/, "");
   return out.trim();
 }
 

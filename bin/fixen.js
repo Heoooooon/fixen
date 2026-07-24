@@ -56,23 +56,24 @@ function cleanOutput(text) {
 
 // ---------------------------------------------------------------- prompt
 
-function buildPrompt(sentence, { explain, lang }) {
+function buildPrompt(sentence, { explain, lang, target }) {
   if (!explain) {
     return (
-      "You are an English writing corrector. Correct the grammar, spelling, " +
-      "word choice, and naturalness of the following English text. " +
+      `You are a ${target} writing corrector. Correct the grammar, spelling, ` +
+      `word choice, and naturalness of the following ${target} text. ` +
       "Reply with ONLY the corrected text — no quotes, no explanation, no preamble. " +
       "If the text is already correct and natural, reply with it unchanged.\n\n" +
       `Text:\n${sentence}`
     );
   }
   return (
-    "You are an English writing corrector. Correct the grammar, spelling, " +
-    "word choice, and naturalness of the following English text.\n" +
+    `You are a ${target} writing corrector. Correct the grammar, spelling, ` +
+    `word choice, and naturalness of the following ${target} text.\n` +
     "Reply in EXACTLY this format and nothing else:\n\n" +
     "Corrected: <the corrected text>\n" +
     "Notes:\n" +
-    `- <each fix, briefly explained in ${lang}>\n\n` +
+    `- <each fix, briefly explained>\n\n` +
+    `The Notes MUST be written in ${lang}, regardless of the language of the text.\n` +
     `If the text is already correct, say so in the Notes.\n\nText:\n${sentence}`
   );
 }
@@ -192,7 +193,7 @@ async function correct(sentence, opts) {
 
 // ---------------------------------------------------------------- CLI
 
-const HELP = `fixen ${VERSION} — corrects your English using any LLM backend
+const HELP = `fixen ${VERSION} — corrects your writing (any language) using any LLM backend
 
 Usage:
   fixen [options] <sentence...>       correct a sentence
@@ -206,6 +207,7 @@ Options:
                          otherwise the prompt is piped to stdin
   -e, --explain          also explain what was fixed
   -l, --lang <lang>      language for explanations (default: English; e.g. Korean)
+  -t, --target <lang>    language being corrected (default: English)
   -m, --model <model>    model for ollama/api backends
   -h, --help             show this help
   -v, --version          show version
@@ -213,16 +215,18 @@ Options:
 Environment:
   FIXEN_BACKEND             default backend name
   FIXEN_BACKEND_CMD         default custom command template
+  FIXEN_TARGET              default language being corrected
   FIXEN_MODEL               default model (ollama/api)
   FIXEN_API_URL             OpenAI-compatible base URL (default: api.openai.com/v1)
   FIXEN_API_KEY             API key for the 'api' backend
 
 Config (~/.config/fixen/config.json):
-  { "backend": "claude", "command": null, "model": null, "lang": "Korean" }
+  { "backend": "claude", "command": null, "model": null, "lang": "Korean", "target": "English" }
 
 Examples:
   fixen "I has a apple"
   fixen -e -l Korean "She go to school yesterday"
+  fixen -t Japanese "私は昨日学校に行きたです"
   fixen -b ollama -m llama3.1 "he dont know nothing"
   fixen -c 'my-llm --quiet {prompt}' "its a beautiful day"`;
 
@@ -237,6 +241,7 @@ function parseArgs(argv) {
       case "-b": case "--backend": opts.backend = argv[++i]; break;
       case "-c": case "--command": opts.command = argv[++i]; break;
       case "-l": case "--lang": opts.lang = argv[++i]; break;
+      case "-t": case "--target": opts.target = argv[++i]; break;
       case "-m": case "--model": opts.model = argv[++i]; break;
       case "--": opts.words.push(...argv.slice(i + 1)); i = argv.length; break;
       default:
@@ -250,12 +255,12 @@ function parseArgs(argv) {
 async function interactive(opts) {
   process.stderr.write(
     `fixen ${VERSION} — backend: ${opts.command ? "custom" : opts.backend}` +
-    ` — type English, get corrections. Ctrl+D to quit.\n`
+    ` — type ${opts.target}, get corrections. Ctrl+D to quit.\n`
   );
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stderr,
-    prompt: "en> ",
+    prompt: "fix> ",
   });
   rl.prompt();
   for await (const line of rl) {
@@ -280,6 +285,7 @@ async function main() {
   opts.backend ??= process.env.FIXEN_BACKEND || cfg.backend || undefined;
   opts.model ??= process.env.FIXEN_MODEL || cfg.model || undefined;
   opts.lang ??= cfg.lang || "English";
+  opts.target ??= process.env.FIXEN_TARGET || cfg.target || "English";
 
   if (!opts.command && !opts.backend) {
     opts.backend = detectBackend();

@@ -34,7 +34,10 @@ echo "your sentence" | fixen      # stdin / pipes
 fixen                             # interactive mode (type lines, Ctrl+D to quit)
 fixen -e "sentence"               # also explain what was fixed
 fixen -e -l Korean "sentence"     # explanations in Korean
+fixen -t Japanese "日本語の文"      # correct any language, not just English
 ```
+
+English is just the default. `-t/--target` (or `FIXEN_TARGET`, or `"target"` in the config) switches the language being corrected — `fixen -t French -e -l Korean "..."` corrects French and explains the fixes in Korean.
 
 ## Backends
 
@@ -72,10 +75,10 @@ fixen -b api "sentence"
 Defaults can live in `~/.config/fixen/config.json`:
 
 ```json
-{ "backend": "claude", "model": null, "command": null, "lang": "Korean" }
+{ "backend": "claude", "model": null, "command": null, "lang": "Korean", "target": "English" }
 ```
 
-Environment variables `FIXEN_BACKEND`, `FIXEN_BACKEND_CMD`, `FIXEN_MODEL`, `FIXEN_API_URL`, `FIXEN_API_KEY` override the config; CLI flags override everything.
+Environment variables `FIXEN_BACKEND`, `FIXEN_BACKEND_CMD`, `FIXEN_TARGET`, `FIXEN_MODEL`, `FIXEN_API_URL`, `FIXEN_API_KEY` override the config; CLI flags override everything.
 
 ## License
 

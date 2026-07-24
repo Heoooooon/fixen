@@ -18,7 +18,7 @@ Notes:
 ## Install
 
 ```sh
-npm install -g fixen
+npm install -g fixen-cli          # installs the `fixen` command
 # or run from a clone:
 git clone https://github.com/you/fixen && cd fixen
 npm link

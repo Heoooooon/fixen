@@ -2,7 +2,7 @@
 "use strict";
 
 /*
- * ec — English Correct
+ * fixen — Fix your English
  * Backend-agnostic English sentence corrector.
  * Pipes a correction prompt into any LLM backend (claude, codex, gjc,
  * ollama, an OpenAI-compatible API, or any custom shell command) and
@@ -19,14 +19,14 @@ const VERSION = require("../package.json").version;
 
 const CONFIG_PATH = path.join(
   process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config"),
-  "englishcorrect",
+  "fixen",
   "config.json"
 );
 
 // ---------------------------------------------------------------- helpers
 
 function fail(msg) {
-  process.stderr.write(`ec: ${msg}\n`);
+  process.stderr.write(`fixen: ${msg}\n`);
   process.exit(1);
 }
 
@@ -105,7 +105,7 @@ const BACKENDS = {
   codex(prompt) {
     const tmp = path.join(
       os.tmpdir(),
-      `ec-codex-${process.pid}-${Date.now()}.txt`
+      `fixen-codex-${process.pid}-${Date.now()}.txt`
     );
     try {
       runArgv(
@@ -128,9 +128,9 @@ const BACKENDS = {
 };
 
 async function apiBackend(prompt, { model }) {
-  const base = (process.env.EC_API_URL || "https://api.openai.com/v1").replace(/\/$/, "");
-  const key = process.env.EC_API_KEY || process.env.OPENAI_API_KEY;
-  if (!key) fail("api backend needs EC_API_KEY (or OPENAI_API_KEY)");
+  const base = (process.env.FIXEN_API_URL || "https://api.openai.com/v1").replace(/\/$/, "");
+  const key = process.env.FIXEN_API_KEY || process.env.OPENAI_API_KEY;
+  if (!key) fail("api backend needs FIXEN_API_KEY (or OPENAI_API_KEY)");
   const res = await fetch(`${base}/chat/completions`, {
     method: "POST",
     headers: {
@@ -138,7 +138,7 @@ async function apiBackend(prompt, { model }) {
       authorization: `Bearer ${key}`,
     },
     body: JSON.stringify({
-      model: model || process.env.EC_MODEL || "gpt-4o-mini",
+      model: model || process.env.FIXEN_MODEL || "gpt-4o-mini",
       messages: [{ role: "user", content: prompt }],
       temperature: 0,
     }),
@@ -154,10 +154,10 @@ function customBackend(template, prompt) {
   // {prompt} in the template expands to a safely quoted env var.
   // Without {prompt}, the prompt is piped to the command's stdin.
   const usesArg = template.includes("{prompt}");
-  const cmd = usesArg ? template.replaceAll("{prompt}", '"$EC_PROMPT"') : template;
+  const cmd = usesArg ? template.replaceAll("{prompt}", '"$FIXEN_PROMPT"') : template;
   const r = spawnSync("/bin/sh", ["-c", cmd], {
     input: usesArg ? undefined : prompt,
-    env: { ...process.env, EC_PROMPT: prompt },
+    env: { ...process.env, FIXEN_PROMPT: prompt },
     encoding: "utf8",
     maxBuffer: 16 * 1024 * 1024,
   });
@@ -171,7 +171,7 @@ function detectBackend() {
   for (const name of ["claude", "codex", "gjc", "gemini", "ollama"]) {
     if (which(name)) return name;
   }
-  if (process.env.EC_API_KEY || process.env.OPENAI_API_KEY) return "api";
+  if (process.env.FIXEN_API_KEY || process.env.OPENAI_API_KEY) return "api";
   return null;
 }
 
@@ -192,16 +192,16 @@ async function correct(sentence, opts) {
 
 // ---------------------------------------------------------------- CLI
 
-const HELP = `ec ${VERSION} — corrects your English using any LLM backend
+const HELP = `fixen ${VERSION} — corrects your English using any LLM backend
 
 Usage:
-  ec [options] <sentence...>       correct a sentence
-  echo "sentence" | ec [options]   correct stdin
-  ec [options]                     interactive mode (TTY)
+  fixen [options] <sentence...>       correct a sentence
+  echo "sentence" | fixen [options]   correct stdin
+  fixen [options]                     interactive mode (TTY)
 
 Options:
   -b, --backend <name>   claude | codex | gjc | gemini | ollama | api
-                         (default: auto-detect, or config/EC_BACKEND)
+                         (default: auto-detect, or config/FIXEN_BACKEND)
   -c, --command <tmpl>   custom shell command; {prompt} expands to the prompt,
                          otherwise the prompt is piped to stdin
   -e, --explain          also explain what was fixed
@@ -211,20 +211,20 @@ Options:
   -v, --version          show version
 
 Environment:
-  EC_BACKEND             default backend name
-  EC_BACKEND_CMD         default custom command template
-  EC_MODEL               default model (ollama/api)
-  EC_API_URL             OpenAI-compatible base URL (default: api.openai.com/v1)
-  EC_API_KEY             API key for the 'api' backend
+  FIXEN_BACKEND             default backend name
+  FIXEN_BACKEND_CMD         default custom command template
+  FIXEN_MODEL               default model (ollama/api)
+  FIXEN_API_URL             OpenAI-compatible base URL (default: api.openai.com/v1)
+  FIXEN_API_KEY             API key for the 'api' backend
 
-Config (~/.config/englishcorrect/config.json):
+Config (~/.config/fixen/config.json):
   { "backend": "claude", "command": null, "model": null, "lang": "Korean" }
 
 Examples:
-  ec "I has a apple"
-  ec -e -l Korean "She go to school yesterday"
-  ec -b ollama -m llama3.1 "he dont know nothing"
-  ec -c 'my-llm --quiet {prompt}' "its a beautiful day"`;
+  fixen "I has a apple"
+  fixen -e -l Korean "She go to school yesterday"
+  fixen -b ollama -m llama3.1 "he dont know nothing"
+  fixen -c 'my-llm --quiet {prompt}' "its a beautiful day"`;
 
 function parseArgs(argv) {
   const opts = { words: [] };
@@ -240,7 +240,7 @@ function parseArgs(argv) {
       case "-m": case "--model": opts.model = argv[++i]; break;
       case "--": opts.words.push(...argv.slice(i + 1)); i = argv.length; break;
       default:
-        if (a.startsWith("-") && a !== "-") fail(`unknown option '${a}' (see ec --help)`);
+        if (a.startsWith("-") && a !== "-") fail(`unknown option '${a}' (see fixen --help)`);
         opts.words.push(a);
     }
   }
@@ -249,7 +249,7 @@ function parseArgs(argv) {
 
 async function interactive(opts) {
   process.stderr.write(
-    `ec ${VERSION} — backend: ${opts.command ? "custom" : opts.backend}` +
+    `fixen ${VERSION} — backend: ${opts.command ? "custom" : opts.backend}` +
     ` — type English, get corrections. Ctrl+D to quit.\n`
   );
   const rl = readline.createInterface({
@@ -265,7 +265,7 @@ async function interactive(opts) {
       try {
         process.stdout.write((await correct(s, opts)) + "\n");
       } catch (e) {
-        process.stderr.write(`ec: ${e.message}\n`);
+        process.stderr.write(`fixen: ${e.message}\n`);
       }
     }
     rl.prompt();
@@ -276,9 +276,9 @@ async function interactive(opts) {
 async function main() {
   const cfg = loadConfig();
   const opts = parseArgs(process.argv.slice(2));
-  opts.command ??= process.env.EC_BACKEND_CMD || cfg.command || undefined;
-  opts.backend ??= process.env.EC_BACKEND || cfg.backend || undefined;
-  opts.model ??= process.env.EC_MODEL || cfg.model || undefined;
+  opts.command ??= process.env.FIXEN_BACKEND_CMD || cfg.command || undefined;
+  opts.backend ??= process.env.FIXEN_BACKEND || cfg.backend || undefined;
+  opts.model ??= process.env.FIXEN_MODEL || cfg.model || undefined;
   opts.lang ??= cfg.lang || "English";
 
   if (!opts.command && !opts.backend) {
@@ -286,7 +286,7 @@ async function main() {
     if (!opts.backend) {
       fail(
         "no backend found. Install one of: claude, codex, gjc, gemini, ollama —\n" +
-        "or set EC_API_KEY, or configure a custom command (see ec --help)."
+        "or set FIXEN_API_KEY, or configure a custom command (see fixen --help)."
       );
     }
   }

@@ -1,10 +1,10 @@
 {
-  "name": "englishcorrect",
+  "name": "fixen",
   "version": "0.1.0",
-  "description": "Backend-agnostic English sentence corrector CLI. Works with claude, codex, gjc, ollama, or any OpenAI-compatible API.",
+  "description": "Fix your English from the command line — backend-agnostic corrector that works with claude, codex, gjc, gemini, ollama, or any OpenAI-compatible API.",
   "license": "MIT",
   "bin": {
-    "ec": "bin/ec.js"
+    "fixen": "bin/fixen.js"
   },
   "files": [
     "bin"
@@ -16,6 +16,7 @@
     "english",
     "grammar",
     "correction",
+    "proofreading",
     "cli",
     "llm",
     "claude",

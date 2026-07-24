@@ -1,6 +1,6 @@
 {
   "name": "fixen-cli",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Fix your English from the command line — backend-agnostic corrector that works with claude, codex, gjc, gemini, ollama, or any OpenAI-compatible API.",
   "license": "MIT",
   "repository": {

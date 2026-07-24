@@ -30,8 +30,16 @@ function fail(msg) {
   process.exit(1);
 }
 
+const IS_WIN = process.platform === "win32";
+
+// CLI backends are usually installed as .cmd shims on Windows, which Node
+// cannot spawn directly; the 'ollama' and 'api' backends work natively.
+const WIN_HINT =
+  "\nOn Windows, AI CLIs installed as .cmd shims cannot be launched directly. " +
+  "Use WSL, or the 'ollama' / 'api' backend.";
+
 function which(cmd) {
-  const r = spawnSync(process.platform === "win32" ? "where" : "which", [cmd], {
+  const r = spawnSync(IS_WIN ? "where" : "which", [cmd], {
     encoding: "utf8",
   });
   return r.status === 0;
@@ -49,8 +57,9 @@ function cleanOutput(text) {
   let out = text.trim();
   // strip code fences
   out = out.replace(/^```[a-z]*\n?/i, "").replace(/\n?```$/, "").trim();
-  // strip a single pair of wrapping quotes
-  if (/^".*"$/s.test(out)) out = out.slice(1, -1);
+  // strip a single pair of wrapping quotes — only when nothing inside is
+  // quoted, so dialogue like `"Hi," he said, "bye."` is left intact
+  if (/^"[^"]*"$/s.test(out)) out = out.slice(1, -1);
   // strip a trailing chat-mode footer: with `fixen install` active, backend
   // CLIs may append their own "---\nfixen: ..." to our one-shot correction
   out = out.replace(/\n+-{3,}\s*\nfixen:[\s\S]*$/, "");
@@ -89,7 +98,9 @@ function runArgv(argv, { stdin } = {}) {
     encoding: "utf8",
     maxBuffer: 16 * 1024 * 1024,
   });
-  if (r.error) fail(`failed to run '${argv[0]}': ${r.error.message}`);
+  if (r.error) {
+    fail(`failed to run '${argv[0]}': ${r.error.message}${IS_WIN ? WIN_HINT : ""}`);
+  }
   if (r.status !== 0) {
     const detail = [r.stdout, r.stderr].map((s) => (s || "").trim()).filter(Boolean).join("\n");
     fail(`backend '${argv[0]}' exited with code ${r.status}\n${detail}`);
@@ -157,6 +168,7 @@ async function apiBackend(prompt, { model }) {
 function customBackend(template, prompt) {
   // {prompt} in the template expands to a safely quoted env var.
   // Without {prompt}, the prompt is piped to the command's stdin.
+  if (IS_WIN) fail("-c/--command needs a POSIX shell; run fixen under WSL on Windows.");
   const usesArg = template.includes("{prompt}");
   const cmd = usesArg ? template.replaceAll("{prompt}", '"$FIXEN_PROMPT"') : template;
   const r = spawnSync("/bin/sh", ["-c", cmd], {

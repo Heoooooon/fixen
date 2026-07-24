@@ -27,6 +27,8 @@ npm install -g fixen-cli    # installs the `fixen` command
 
 Requires Node.js ≥ 18 and at least one [backend](#backends) — if you can run `claude`, `codex`, `gjc`, `gemini`, or `ollama` in a terminal, you're done.
 
+**Platform:** macOS and Linux are fully supported. On Windows, the `ollama` and `api` backends work natively, but the AI-CLI backends and `-c/--command` need a POSIX shell — run fixen under WSL.
+
 ## Usage
 
 ```sh

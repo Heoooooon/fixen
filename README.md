@@ -1,8 +1,13 @@
 # fixen
 
-**Fix your English from the command line** — using any LLM backend you already have.
+> **Fix your English from the command line** — with the LLM you already have.
 
-`fixen` is a tiny zero-dependency CLI that builds a correction prompt and pipes it into whatever is installed on your machine: `claude`, `codex`, `gjc`, `gemini`, `ollama`, any OpenAI-compatible API, or any custom shell command. No vendor lock-in.
+[![npm](https://img.shields.io/npm/v/fixen-cli)](https://www.npmjs.com/package/fixen-cli)
+[![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+![node](https://img.shields.io/badge/node-%E2%89%A518-brightgreen)
+![deps](https://img.shields.io/badge/dependencies-0-orange)
+
+You already talk to an LLM all day. `fixen` turns it into your personal proofreader: one tiny zero-dependency CLI that builds a correction prompt and pipes it into whatever is on your machine — `claude`, `codex`, `gjc`, `gemini`, `ollama`, any OpenAI-compatible API, or any shell command that reads a prompt and prints an answer. No accounts, no API keys (unless you want one), no vendor lock-in.
 
 ```console
 $ fixen "I has a apple and she go to school yesterday"
@@ -15,16 +20,15 @@ Notes:
 - "know nothing" → "know anything": 이중 부정을 피했습니다.
 ```
 
+And the part that makes it stick: `fixen install` hooks your AI chat CLIs so **every normal chat reply ends with a correction of what you typed**. You learn while you work, for free, without opening a single flashcard app.
+
 ## Install
 
 ```sh
-npm install -g fixen-cli          # installs the `fixen` command
-# or run from a clone:
-git clone https://github.com/you/fixen && cd fixen
-npm link
+npm install -g fixen-cli    # installs the `fixen` command
 ```
 
-Requires Node.js ≥ 18 and at least one backend (see below).
+Requires Node.js ≥ 18 and at least one [backend](#backends) — if you can run `claude`, `codex`, `gjc`, `gemini`, or `ollama` in a terminal, you're done.
 
 ## Usage
 
@@ -41,7 +45,7 @@ English is just the default. `-t/--target` (or `FIXEN_TARGET`, or `"target"` in 
 
 ## Chat mode: corrections inside your AI CLI
 
-The killer feature. `fixen install` writes the full rule **once** to `~/.config/fixen/RULE.md`, detects which AI CLIs are installed on your machine, and adds exactly **one marked line** to each one's global instructions — a compact version of the rule plus a pointer to the rule file. Your normal chats then end with a correction of what *you* typed:
+The killer feature. `fixen install` writes the full rule **once** to `~/.config/fixen/RULE.md`, detects which AI CLIs are installed, and adds exactly **one marked line** to each one's global instructions — a compact version of the rule plus a pointer to the rule file. From then on, your normal chats end like this:
 
 ```console
 $ fixen install
@@ -57,11 +61,15 @@ The capital of France is Paris. ...
 fixen: My dream is to go to Paris someday.
 ```
 
+Ask about Kubernetes, get better English on the side. Every message you type is a free micro-lesson.
+
 Out of the box it knows the global instruction files of **claude, codex, gjc, gemini, qwen, opencode, windsurf, goose, and crush** — only the ones actually present are touched. Using something else? Point at its instruction file directly (tracked in a manifest, so `uninstall` cleans it too):
 
 ```sh
 fixen install -f ~/.someai/INSTRUCTIONS.md
 ```
+
+Details that keep it polite:
 
 - Only fires when *your own* writing has mistakes — correct sentences, pasted code, logs, and quotes are left alone.
 - `fixen install -t Japanese` watches Japanese instead; `-e -l Korean` adds one-line reasons in Korean.
@@ -102,13 +110,20 @@ fixen -b api "sentence"
 
 ## Configuration
 
-Defaults can live in `~/.config/fixen/config.json`:
+Defaults live in `~/.config/fixen/config.json`:
 
 ```json
 { "backend": "claude", "model": null, "command": null, "lang": "Korean", "target": "English" }
 ```
 
 Environment variables `FIXEN_BACKEND`, `FIXEN_BACKEND_CMD`, `FIXEN_TARGET`, `FIXEN_MODEL`, `FIXEN_API_URL`, `FIXEN_API_KEY` override the config; CLI flags override everything.
+
+## Why fixen
+
+- **Zero dependencies.** One file, ~18 KB unpacked. `npm install` finishes before you blink.
+- **Bring your own model.** Your existing CLI subscription or a local `ollama` model — fixen doesn't care and never sees your text itself.
+- **Any language.** English by default; `-t` corrects Japanese, French, German, anything.
+- **Reversible.** `fixen uninstall` puts every touched file back exactly as it was.
 
 ## License
 

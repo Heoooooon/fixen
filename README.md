@@ -41,7 +41,7 @@ English is just the default. `-t/--target` (or `FIXEN_TARGET`, or `"target"` in 
 
 ## Chat mode: corrections inside your AI CLI
 
-The killer feature. `fixen install` writes the full rule **once** to `~/.config/fixen/RULE.md` and adds exactly **one marked line** to each AI CLI's global instructions — a compact version of the rule plus a pointer to the rule file. Your normal chats then end with a correction of what *you* typed:
+The killer feature. `fixen install` writes the full rule **once** to `~/.config/fixen/RULE.md`, detects which AI CLIs are installed on your machine, and adds exactly **one marked line** to each one's global instructions — a compact version of the rule plus a pointer to the rule file. Your normal chats then end with a correction of what *you* typed:
 
 ```console
 $ fixen install
@@ -55,6 +55,12 @@ The capital of France is Paris. ...
 
 ---
 fixen: My dream is to go to Paris someday.
+```
+
+Out of the box it knows the global instruction files of **claude, codex, gjc, gemini, qwen, opencode, windsurf, goose, and crush** — only the ones actually present are touched. Using something else? Point at its instruction file directly (tracked in a manifest, so `uninstall` cleans it too):
+
+```sh
+fixen install -f ~/.someai/INSTRUCTIONS.md
 ```
 
 - Only fires when *your own* writing has mistakes — correct sentences, pasted code, logs, and quotes are left alone.

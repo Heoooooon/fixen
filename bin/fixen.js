@@ -202,14 +202,54 @@ const END_MARK = "<!-- fixen:end -->";
 const BLOCK_RE = /\n*<!-- fixen:start[\s\S]*?<!-- fixen:end -->\n*/g;
 const RULE_FILE = path.join(path.dirname(CONFIG_PATH), "RULE.md");
 const RULE_FILE_TILDE = RULE_FILE.startsWith(os.homedir()) ? "~" + RULE_FILE.slice(os.homedir().length) : RULE_FILE;
+// Custom targets added via --file are recorded here so uninstall/status find them.
+const MANIFEST_FILE = path.join(path.dirname(CONFIG_PATH), "installed.json");
 
+function target(name, baseParts, fileParts, opts = {}) {
+  return {
+    name,
+    base: path.join(os.homedir(), ...baseParts),
+    file: path.join(os.homedir(), ...fileParts),
+    // @import is inlined natively by claude/gemini-family CLIs.
+    pointer: opts.atImport ? `@${RULE_FILE_TILDE}` : RULE_FILE_TILDE,
+  };
+}
+
+// Global instruction files of known AI CLIs. Only those whose base dir exists
+// (i.e. the CLI is actually installed) are touched.
 const INSTALL_TARGETS = [
-  // Claude Code supports @path imports in CLAUDE.md — the full rule gets inlined.
-  { name: "claude", base: path.join(os.homedir(), ".claude"), file: path.join(os.homedir(), ".claude", "CLAUDE.md"), pointer: `@${RULE_FILE_TILDE}` },
-  { name: "codex", base: path.join(os.homedir(), ".codex"), file: path.join(os.homedir(), ".codex", "AGENTS.md"), pointer: RULE_FILE_TILDE },
-  // ~/.gjc/agent/AGENTS.md is gjc's user-level context file, injected into every session.
-  { name: "gjc", base: path.join(os.homedir(), ".gjc", "agent"), file: path.join(os.homedir(), ".gjc", "agent", "AGENTS.md"), pointer: RULE_FILE_TILDE },
+  target("claude", [".claude"], [".claude", "CLAUDE.md"], { atImport: true }),
+  target("codex", [".codex"], [".codex", "AGENTS.md"]),
+  target("gjc", [".gjc", "agent"], [".gjc", "agent", "AGENTS.md"]),
+  target("gemini", [".gemini"], [".gemini", "GEMINI.md"], { atImport: true }),
+  target("qwen", [".qwen"], [".qwen", "QWEN.md"], { atImport: true }),
+  target("opencode", [".config", "opencode"], [".config", "opencode", "AGENTS.md"]),
+  target("windsurf", [".codeium", "windsurf"], [".codeium", "windsurf", "memories", "global_rules.md"]),
+  target("goose", [".config", "goose"], [".config", "goose", ".goosehints"]),
+  target("crush", [".config", "crush"], [".config", "crush", "CRUSH.md"]),
 ];
+
+function customTarget(file) {
+  const abs = path.resolve(file.replace(/^~(?=\/|$)/, os.homedir()));
+  return { name: "custom", base: path.dirname(abs), file: abs, pointer: RULE_FILE_TILDE };
+}
+
+function loadManifest() {
+  try {
+    const files = JSON.parse(fs.readFileSync(MANIFEST_FILE, "utf8")).files;
+    return Array.isArray(files) ? files.filter((f) => typeof f === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function allTargets() {
+  const known = new Set(INSTALL_TARGETS.map((t) => t.file));
+  return [
+    ...INSTALL_TARGETS,
+    ...loadManifest().filter((f) => !known.has(f)).map(customTarget),
+  ];
+}
 
 // One line carrying the essential behavior, so it works even in CLIs that
 // don't auto-read the referenced file.
@@ -246,8 +286,12 @@ function cmdInstall(opts) {
   fs.mkdirSync(path.dirname(RULE_FILE), { recursive: true });
   fs.writeFileSync(RULE_FILE, ruleText(opts) + "\n");
   process.stdout.write(`rule  ${RULE_FILE}\n`);
-  for (const t of INSTALL_TARGETS) {
-    if (!fs.existsSync(t.base)) {
+  const customs = (opts.files || []).map(customTarget);
+  const knownFiles = new Set(INSTALL_TARGETS.map((t) => t.file));
+  const targets = [...allTargets().filter((t) => !customs.some((c) => c.file === t.file)), ...customs];
+  const installedFiles = [];
+  for (const t of targets) {
+    if (t.name !== "custom" && !fs.existsSync(t.base)) {
       process.stdout.write(`skip  ${t.name}: ${t.base} not found (CLI not installed?)\n`);
       continue;
     }
@@ -255,15 +299,20 @@ function cmdInstall(opts) {
     const prev = fs.existsSync(t.file) ? fs.readFileSync(t.file, "utf8") : "";
     const stripped = prev.replace(BLOCK_RE, "\n").trimEnd();
     fs.writeFileSync(t.file, (stripped ? stripped + "\n\n" : "") + pointerLine(opts, t.pointer) + "\n");
+    if (!knownFiles.has(t.file)) installedFiles.push(t.file);
     process.stdout.write(`ok    ${t.name}: ${t.file} (one line added)\n`);
   }
+  if (installedFiles.length > 0) {
+    fs.writeFileSync(MANIFEST_FILE, JSON.stringify({ files: installedFiles }, null, 2) + "\n");
+  }
   process.stdout.write(`\nNew chat sessions of the CLIs above will now end replies with a ${opts.target} correction.\n`);
+  process.stdout.write(`Using a different AI tool? Point at its global instruction file: fixen install -f <path>\n`);
 }
 
 function cmdUninstall() {
-  for (const t of INSTALL_TARGETS) {
+  for (const t of allTargets()) {
     if (!fs.existsSync(t.file)) {
-      process.stdout.write(`-     ${t.name}: not installed\n`);
+      if (fs.existsSync(t.base)) process.stdout.write(`-     ${t.name}: not installed\n`);
       continue;
     }
     const prev = fs.readFileSync(t.file, "utf8");
@@ -276,17 +325,20 @@ function cmdUninstall() {
     else fs.rmSync(t.file);
     process.stdout.write(`ok    ${t.name}: removed\n`);
   }
-  if (fs.existsSync(RULE_FILE)) {
-    fs.rmSync(RULE_FILE);
-    process.stdout.write(`ok    rule file removed: ${RULE_FILE}\n`);
+  for (const f of [RULE_FILE, MANIFEST_FILE]) {
+    if (fs.existsSync(f)) {
+      fs.rmSync(f);
+      process.stdout.write(`ok    removed: ${f}\n`);
+    }
   }
 }
 
 function cmdStatus() {
   process.stdout.write(`${fs.existsSync(RULE_FILE) ? "on " : "off"}  rule: ${RULE_FILE}\n`);
-  for (const t of INSTALL_TARGETS) {
+  for (const t of allTargets()) {
     const installed = fs.existsSync(t.file) &&
       fs.readFileSync(t.file, "utf8").includes(START_MARK);
+    if (!installed && t.name !== "custom" && !fs.existsSync(t.base)) continue; // CLI not installed — noise
     process.stdout.write(`${installed ? "on " : "off"}  ${t.name}: ${t.file}\n`);
   }
 }
@@ -300,10 +352,13 @@ Usage:
   echo "sentence" | fixen [options]   correct stdin
   fixen [options]                     interactive mode (TTY)
 
-  fixen install [-t <lang>] [-e] [-l <lang>]
-      plant a rule into claude/codex/gjc global instructions so every normal
-      chat reply ends with a correction of what you typed
-  fixen uninstall                     remove that rule everywhere
+  fixen install [-t <lang>] [-e] [-l <lang>] [-f <file>]...
+      write the rule to ~/.config/fixen/RULE.md and add one pointer line to
+      the global instructions of every installed AI CLI (claude, codex, gjc,
+      gemini, qwen, opencode, windsurf, goose, crush) so every normal chat
+      reply ends with a correction of what you typed; -f targets any other
+      tool's global instruction file
+  fixen uninstall                     remove the rule and all pointer lines
   fixen status                        show where the rule is installed
 
 Options:
@@ -315,6 +370,7 @@ Options:
   -l, --lang <lang>      language for explanations (default: English; e.g. Korean)
   -t, --target <lang>    language being corrected (default: English)
   -m, --model <model>    model for ollama/api backends
+  -f, --file <path>      (install) extra instruction file to add the line to
   -h, --help             show this help
   -v, --version          show version
 
@@ -334,7 +390,9 @@ Examples:
   fixen -e -l Korean "She go to school yesterday"
   fixen -t Japanese "私は昨日学校に行きたです"
   fixen -b ollama -m llama3.1 "he dont know nothing"
-  fixen -c 'my-llm --quiet {prompt}' "its a beautiful day"`;
+  fixen -c 'my-llm --quiet {prompt}' "its a beautiful day"
+  fixen install -t English -e -l Korean
+  fixen install -f ~/.someai/INSTRUCTIONS.md`;
 
 function parseArgs(argv) {
   const opts = { words: [] };
@@ -349,6 +407,7 @@ function parseArgs(argv) {
       case "-l": case "--lang": opts.lang = argv[++i]; break;
       case "-t": case "--target": opts.target = argv[++i]; break;
       case "-m": case "--model": opts.model = argv[++i]; break;
+      case "-f": case "--file": (opts.files ??= []).push(argv[++i]); break;
       case "--": opts.words.push(...argv.slice(i + 1)); i = argv.length; break;
       default:
         if (a.startsWith("-") && a !== "-") fail(`unknown option '${a}' (see fixen --help)`);

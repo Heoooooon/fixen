@@ -192,24 +192,42 @@ async function correct(sentence, opts) {
 }
 
 // ---------------------------------------------------------------- install
-// Plants a correction rule into the global instruction files of installed
-// AI CLIs so that every chat reply ends with a correction of what the user
-// wrote. Reversible via `fixen uninstall`.
+// Writes the full rule ONCE to ~/.config/fixen/RULE.md, then adds a single
+// marked line to each CLI's global instruction file: a compact version of the
+// rule plus a pointer to RULE.md. Claude's @import inlines the full rule.
+// Reversible via `fixen uninstall`.
 
-const START_MARK = "<!-- fixen:start — managed by `fixen install`; run `fixen uninstall` to remove -->";
+const START_MARK = "<!-- fixen:start -->";
 const END_MARK = "<!-- fixen:end -->";
 const BLOCK_RE = /\n*<!-- fixen:start[\s\S]*?<!-- fixen:end -->\n*/g;
+const RULE_FILE = path.join(path.dirname(CONFIG_PATH), "RULE.md");
+const RULE_FILE_TILDE = RULE_FILE.startsWith(os.homedir()) ? "~" + RULE_FILE.slice(os.homedir().length) : RULE_FILE;
 
 const INSTALL_TARGETS = [
-  { name: "claude", base: path.join(os.homedir(), ".claude"), file: path.join(os.homedir(), ".claude", "CLAUDE.md") },
-  { name: "codex", base: path.join(os.homedir(), ".codex"), file: path.join(os.homedir(), ".codex", "AGENTS.md") },
+  // Claude Code supports @path imports in CLAUDE.md — the full rule gets inlined.
+  { name: "claude", base: path.join(os.homedir(), ".claude"), file: path.join(os.homedir(), ".claude", "CLAUDE.md"), pointer: `@${RULE_FILE_TILDE}` },
+  { name: "codex", base: path.join(os.homedir(), ".codex"), file: path.join(os.homedir(), ".codex", "AGENTS.md"), pointer: RULE_FILE_TILDE },
   // ~/.gjc/agent/AGENTS.md is gjc's user-level context file, injected into every session.
-  { name: "gjc", base: path.join(os.homedir(), ".gjc", "agent"), file: path.join(os.homedir(), ".gjc", "agent", "AGENTS.md") },
+  { name: "gjc", base: path.join(os.homedir(), ".gjc", "agent"), file: path.join(os.homedir(), ".gjc", "agent", "AGENTS.md"), pointer: RULE_FILE_TILDE },
 ];
+
+// One line carrying the essential behavior, so it works even in CLIs that
+// don't auto-read the referenced file.
+function pointerLine({ target }, pointer) {
+  return (
+    `${START_MARK} fixen: if the ${target} the user wrote themselves in their latest message ` +
+    `has mistakes (ignore pasted text/code/quotes), append "\\n---\\nfixen: <corrected sentence>" ` +
+    `after your normal answer; if it is correct, append nothing. Full rule: ${pointer} ${END_MARK}`
+  );
+}
 
 function ruleText({ target, lang, explain }) {
   const t = target;
-  return `## ${t} check (fixen)
+  return `# fixen — ${t} correction rule
+
+Managed by \`fixen install\`; run \`fixen uninstall\` to remove.
+
+## ${t} check
 
 The user is practicing ${t}. In EVERY reply, after answering normally, review the ${t} that the user themselves wrote in their latest message. Ignore quoted text, code, logs, file contents, and anything pasted rather than written by the user.
 
@@ -225,7 +243,9 @@ Rules:
 }
 
 function cmdInstall(opts) {
-  const block = `${START_MARK}\n${ruleText(opts)}\n${END_MARK}`;
+  fs.mkdirSync(path.dirname(RULE_FILE), { recursive: true });
+  fs.writeFileSync(RULE_FILE, ruleText(opts) + "\n");
+  process.stdout.write(`rule  ${RULE_FILE}\n`);
   for (const t of INSTALL_TARGETS) {
     if (!fs.existsSync(t.base)) {
       process.stdout.write(`skip  ${t.name}: ${t.base} not found (CLI not installed?)\n`);
@@ -234,8 +254,8 @@ function cmdInstall(opts) {
     fs.mkdirSync(path.dirname(t.file), { recursive: true });
     const prev = fs.existsSync(t.file) ? fs.readFileSync(t.file, "utf8") : "";
     const stripped = prev.replace(BLOCK_RE, "\n").trimEnd();
-    fs.writeFileSync(t.file, (stripped ? stripped + "\n\n" : "") + block + "\n");
-    process.stdout.write(`ok    ${t.name}: ${t.file}\n`);
+    fs.writeFileSync(t.file, (stripped ? stripped + "\n\n" : "") + pointerLine(opts, t.pointer) + "\n");
+    process.stdout.write(`ok    ${t.name}: ${t.file} (one line added)\n`);
   }
   process.stdout.write(`\nNew chat sessions of the CLIs above will now end replies with a ${opts.target} correction.\n`);
 }
@@ -256,9 +276,14 @@ function cmdUninstall() {
     else fs.rmSync(t.file);
     process.stdout.write(`ok    ${t.name}: removed\n`);
   }
+  if (fs.existsSync(RULE_FILE)) {
+    fs.rmSync(RULE_FILE);
+    process.stdout.write(`ok    rule file removed: ${RULE_FILE}\n`);
+  }
 }
 
 function cmdStatus() {
+  process.stdout.write(`${fs.existsSync(RULE_FILE) ? "on " : "off"}  rule: ${RULE_FILE}\n`);
   for (const t of INSTALL_TARGETS) {
     const installed = fs.existsSync(t.file) &&
       fs.readFileSync(t.file, "utf8").includes(START_MARK);

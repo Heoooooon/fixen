@@ -1,0 +1,25 @@
+{
+  "name": "englishcorrect",
+  "version": "0.1.0",
+  "description": "Backend-agnostic English sentence corrector CLI. Works with claude, codex, gjc, ollama, or any OpenAI-compatible API.",
+  "license": "MIT",
+  "bin": {
+    "ec": "bin/ec.js"
+  },
+  "files": [
+    "bin"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "english",
+    "grammar",
+    "correction",
+    "cli",
+    "llm",
+    "claude",
+    "codex",
+    "ollama"
+  ]
+}

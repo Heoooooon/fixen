@@ -23,10 +23,61 @@ const CONFIG_PATH = path.join(
   "config.json"
 );
 
+// ---------------------------------------------------------------- colors
+// Zero-dependency ANSI palette. Colors are decided per stream: enabled only
+// on a TTY, disabled by NO_COLOR / TERM=dumb, forced by FORCE_COLOR — so
+// piped output stays clean plain text.
+
+function mkPalette(enabled) {
+  const wrap = (open, close) => (s) => (enabled ? `\x1b[${open}m${s}\x1b[${close}m` : String(s));
+  return {
+    enabled,
+    bold: wrap(1, 22),
+    dim: wrap(2, 22),
+    red: wrap(31, 39),
+    green: wrap(32, 39),
+    yellow: wrap(33, 39),
+    cyan: wrap(36, 39),
+  };
+}
+
+function colorOn(stream) {
+  if (process.env.FORCE_COLOR === "0") return false;
+  if ("FORCE_COLOR" in process.env) return true; // wins over NO_COLOR, like Node
+  if ("NO_COLOR" in process.env || process.env.TERM === "dumb") return false;
+  return Boolean(stream.isTTY);
+}
+
+const OUT = mkPalette(colorOn(process.stdout));
+const ERR = mkPalette(colorOn(process.stderr));
+
+// Transient "backend is thinking" line on stderr; returns a clearer. Only on
+// a real TTY — \r line-clearing is meaningless in pipes and log captures.
+function statusLine(msg) {
+  if (!process.stderr.isTTY || !ERR.enabled) return () => {};
+  process.stderr.write(ERR.dim(`◌ ${msg}…`));
+  return () => process.stderr.write("\r\x1b[2K");
+}
+
+// Renders a correction for human eyes: check mark + bold sentence, dimmed
+// bulleted notes. Falls back to plain text when stdout is not a color TTY.
+function prettyResult(text, { explain }) {
+  if (!OUT.enabled) return text;
+  const m = explain && text.match(/^Corrected:\s*([\s\S]*?)\n\s*Notes:\s*\n?([\s\S]*)$/i);
+  if (!m) return `${OUT.green("✔")} ${OUT.bold(text)}`;
+  const notes = m[2]
+    .trim()
+    .split("\n")
+    .map((l) => `  ${OUT.dim(l.trim().replace(/^-\s*/, "• "))}`)
+    .join("\n");
+  return `${OUT.green("✔")} ${OUT.bold(m[1].trim())}${notes ? "\n" + notes : ""}`;
+}
+
 // ---------------------------------------------------------------- helpers
 
 function fail(msg) {
-  process.stderr.write(`fixen: ${msg}\n`);
+  if (process.stderr.isTTY) process.stderr.write("\r\x1b[2K"); // drop any pending status line
+  process.stderr.write(`${ERR.red("fixen:")} ${msg}\n`);
   process.exit(1);
 }
 
@@ -300,14 +351,14 @@ Rules:
 function cmdInstall(opts) {
   fs.mkdirSync(path.dirname(RULE_FILE), { recursive: true });
   fs.writeFileSync(RULE_FILE, ruleText(opts) + "\n");
-  process.stdout.write(`rule  ${RULE_FILE}\n`);
+  process.stdout.write(`${OUT.cyan("rule")}  ${OUT.dim(RULE_FILE)}\n`);
   const customs = (opts.files || []).map(customTarget);
   const knownFiles = new Set(INSTALL_TARGETS.map((t) => t.file));
   const targets = [...allTargets().filter((t) => !customs.some((c) => c.file === t.file)), ...customs];
   const installedFiles = [];
   for (const t of targets) {
     if (t.name !== "custom" && !fs.existsSync(t.base)) {
-      process.stdout.write(`skip  ${t.name}: ${t.base} not found (CLI not installed?)\n`);
+      process.stdout.write(OUT.dim(`skip  ${t.name}: ${t.base} not found (CLI not installed?)`) + "\n");
       continue;
     }
     fs.mkdirSync(path.dirname(t.file), { recursive: true });
@@ -315,46 +366,50 @@ function cmdInstall(opts) {
     const stripped = prev.replace(BLOCK_RE, "\n").trimEnd();
     fs.writeFileSync(t.file, (stripped ? stripped + "\n\n" : "") + pointerLine(opts, t.pointer) + "\n");
     if (!knownFiles.has(t.file)) installedFiles.push(t.file);
-    process.stdout.write(`ok    ${t.name}: ${t.file} (one line added)\n`);
+    process.stdout.write(`${OUT.green("ok")}    ${OUT.bold(t.name)}: ${t.file} ${OUT.dim("(one line added)")}\n`);
   }
   if (installedFiles.length > 0) {
     fs.writeFileSync(MANIFEST_FILE, JSON.stringify({ files: installedFiles }, null, 2) + "\n");
   }
-  process.stdout.write(`\nNew chat sessions of the CLIs above will now end replies with a ${opts.target} correction.\n`);
-  process.stdout.write(`Using a different AI tool? Point at its global instruction file: fixen install -f <path>\n`);
+  process.stdout.write(`\nNew chat sessions of the CLIs above will now end replies with a ${OUT.bold(opts.target)} correction.\n`);
+  process.stdout.write(OUT.dim(`Using a different AI tool? Point at its global instruction file: fixen install -f <path>`) + "\n");
 }
 
 function cmdUninstall() {
   for (const t of allTargets()) {
     if (!fs.existsSync(t.file)) {
-      if (fs.existsSync(t.base)) process.stdout.write(`-     ${t.name}: not installed\n`);
+      if (fs.existsSync(t.base)) process.stdout.write(OUT.dim(`-     ${t.name}: not installed`) + "\n");
       continue;
     }
     const prev = fs.readFileSync(t.file, "utf8");
     if (!prev.includes(START_MARK)) {
-      process.stdout.write(`-     ${t.name}: not installed\n`);
+      process.stdout.write(OUT.dim(`-     ${t.name}: not installed`) + "\n");
       continue;
     }
     const stripped = prev.replace(BLOCK_RE, "\n").trim();
     if (stripped) fs.writeFileSync(t.file, stripped + "\n");
     else fs.rmSync(t.file);
-    process.stdout.write(`ok    ${t.name}: removed\n`);
+    process.stdout.write(`${OUT.green("ok")}    ${OUT.bold(t.name)}: removed\n`);
   }
   for (const f of [RULE_FILE, MANIFEST_FILE]) {
     if (fs.existsSync(f)) {
       fs.rmSync(f);
-      process.stdout.write(`ok    removed: ${f}\n`);
+      process.stdout.write(`${OUT.green("ok")}    removed: ${OUT.dim(f)}\n`);
     }
   }
 }
 
+function onOff(installed) {
+  return installed ? OUT.green("on ") : OUT.yellow("off");
+}
+
 function cmdStatus() {
-  process.stdout.write(`${fs.existsSync(RULE_FILE) ? "on " : "off"}  rule: ${RULE_FILE}\n`);
+  process.stdout.write(`${onOff(fs.existsSync(RULE_FILE))}  ${OUT.bold("rule")}: ${OUT.dim(RULE_FILE)}\n`);
   for (const t of allTargets()) {
     const installed = fs.existsSync(t.file) &&
       fs.readFileSync(t.file, "utf8").includes(START_MARK);
     if (!installed && t.name !== "custom" && !fs.existsSync(t.base)) continue; // CLI not installed — noise
-    process.stdout.write(`${installed ? "on " : "off"}  ${t.name}: ${t.file}\n`);
+    process.stdout.write(`${onOff(installed)}  ${OUT.bold(t.name)}: ${OUT.dim(t.file)}\n`);
   }
 }
 
@@ -409,12 +464,24 @@ Examples:
   fixen install -t English -e -l Korean
   fixen install -f ~/.someai/INSTRUCTIONS.md`;
 
+// Syntax-highlights HELP for color TTYs: bold section headers, cyan flags,
+// env vars, and subcommands. Plain HELP everywhere else.
+function renderHelp() {
+  if (!OUT.enabled) return HELP;
+  return HELP
+    .replace(/^fixen [^\s]+/, (m) => `${OUT.bold(OUT.cyan("fixen"))} ${OUT.dim(m.slice(6))}`)
+    .replace(/^(Usage|Options|Environment|Config[^\n]*|Examples):$/gm, (m) => OUT.bold(m))
+    .replace(/^(  fixen) (install|uninstall|status)/gm, (_, f, sub) => `${f} ${OUT.cyan(sub)}`)
+    .replace(/^(  )(-[a-zA-Z], --[a-z-]+)/gm, (_, pad, flags) => pad + OUT.cyan(flags))
+    .replace(/^(  )(FIXEN_[A-Z_]+)/gm, (_, pad, v) => pad + OUT.cyan(v));
+}
+
 function parseArgs(argv) {
   const opts = { words: [] };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     switch (a) {
-      case "-h": case "--help": process.stdout.write(HELP + "\n"); process.exit(0);
+      case "-h": case "--help": process.stdout.write(renderHelp() + "\n"); process.exit(0);
       case "-v": case "--version": process.stdout.write(VERSION + "\n"); process.exit(0);
       case "-e": case "--explain": opts.explain = true; break;
       case "-b": case "--backend": opts.backend = argv[++i]; break;
@@ -433,24 +500,30 @@ function parseArgs(argv) {
 }
 
 async function interactive(opts) {
+  const backend = opts.command ? "custom" : opts.backend;
   process.stderr.write(
-    `fixen ${VERSION} — backend: ${opts.command ? "custom" : opts.backend}` +
-    ` — type ${opts.target}, get corrections. Ctrl+D to quit.\n`
+    `${ERR.bold(ERR.cyan("fixen"))} ${ERR.dim(`v${VERSION}`)}  ` +
+    `${ERR.dim("backend")} ${ERR.bold(backend)}  ${ERR.dim("target")} ${ERR.bold(opts.target)}\n` +
+    ERR.dim(`type a ${opts.target} sentence — Ctrl+D or :q to quit\n`)
   );
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stderr,
-    prompt: "fix> ",
+    prompt: ERR.enabled ? `${ERR.cyan("❯")} ` : "fix> ",
   });
   rl.prompt();
   for await (const line of rl) {
     const s = line.trim();
     if (s === ":q" || s === ":quit") break;
     if (s) {
+      const done = statusLine(backend);
       try {
-        process.stdout.write((await correct(s, opts)) + "\n");
+        const out = await correct(s, opts);
+        done();
+        process.stdout.write(prettyResult(out, opts) + "\n");
       } catch (e) {
-        process.stderr.write(`fixen: ${e.message}\n`);
+        done();
+        process.stderr.write(`${ERR.red("fixen:")} ${e.message}\n`);
       }
     }
     rl.prompt();
@@ -482,14 +555,18 @@ async function main() {
     }
   }
 
+  const backend = opts.command ? "custom" : opts.backend;
   if (opts.words.length > 0) {
-    process.stdout.write((await correct(opts.words.join(" "), opts)) + "\n");
+    const done = statusLine(backend);
+    const out = await correct(opts.words.join(" "), opts);
+    done();
+    process.stdout.write(prettyResult(out, opts) + "\n");
   } else if (!process.stdin.isTTY) {
     const chunks = [];
     for await (const c of process.stdin) chunks.push(c);
     const text = Buffer.concat(chunks).toString("utf8").trim();
     if (!text) fail("empty input");
-    process.stdout.write((await correct(text, opts)) + "\n");
+    process.stdout.write(prettyResult(await correct(text, opts), opts) + "\n");
   } else {
     await interactive(opts);
   }

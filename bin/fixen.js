@@ -271,7 +271,7 @@ function allTargets() {
 function pointerLine({ target }, pointer) {
   return (
     `${START_MARK} fixen: if the ${target} the user wrote themselves in their latest message ` +
-    `has mistakes (ignore pasted text/code/quotes), append "\\n---\\nfixen: <corrected sentence>" ` +
+    `has mistakes (ignore pasted text/code/quotes), append "\\n---\\n**fixen:** \\\`<corrected sentence>\\\`" ` +
     `after your normal answer; if it is correct, append nothing. Full rule: ${pointer} ${END_MARK}`
   );
 }
@@ -289,7 +289,7 @@ The user is practicing ${t}. In EVERY reply, after answering normally, review th
 If their ${t} contains grammar, spelling, or naturalness mistakes, end the reply with this footer:
 
 ---
-fixen: <corrected version of what the user wrote>${explain ? `\nfixen note: <one short reason per fix, written in ${lang}>` : ""}
+**fixen:** \`<corrected version of what the user wrote>\`${explain ? `\n**fixen note:** <one short reason per fix, written in ${lang}>` : ""}
 
 Rules:
 - One corrected line per mistaken sentence; skip sentences that are already fine.

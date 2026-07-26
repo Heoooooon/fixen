@@ -4,8 +4,6 @@
 
 # fixen
 
-> **Fix your English from the command line** — with the LLM you already have.
-
 [![npm](https://img.shields.io/npm/v/fixen-cli)](https://www.npmjs.com/package/fixen-cli)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 ![node](https://img.shields.io/badge/node-%E2%89%A518-brightgreen)

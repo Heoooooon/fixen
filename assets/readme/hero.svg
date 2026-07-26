@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 520" width="1200" height="520" role="img" aria-labelledby="fixen-hero-title fixen-hero-desc">
+  <title id="fixen-hero-title">fixen — fix your English from the command line, with the LLM you already have</title>
+  <desc id="fixen-hero-desc">Left: the fixen wordmark with a red proofreader mark, the one-line value, and the install command npm install -g fixen-cli. Right: a real chat transcript where a question typed with mistakes gets a normal answer, followed by a fixen line that corrects the user's own sentence.</desc>
+
+  <rect width="1200" height="520" rx="18" fill="#fbf8f1"/>
+  <rect x="0.5" y="0.5" width="1199" height="519" rx="17.5" fill="none" stroke="#e0d8c8"/>
+
+  <!-- 좌: 정체성 -->
+  <g font-family="ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+    <text x="64" y="126" font-size="82" font-weight="700" fill="#191714" letter-spacing="-1">fixen</text>
+    <!-- 교정지 모티프: 빨간 밑줄 + 삽입 캐럿 -->
+    <path d="M64 144 L282 144" stroke="#c0392b" stroke-width="4" stroke-linecap="round"/>
+    <path d="M226 144 l12 -16 l12 16" fill="none" stroke="#c0392b" stroke-width="4" stroke-linejoin="round"/>
+
+    <text x="64" y="204" font-size="25" font-weight="600" fill="#2b2620">Fix your English from the</text>
+    <text x="64" y="236" font-size="25" font-weight="600" fill="#2b2620">command line — with the LLM</text>
+    <text x="64" y="268" font-size="25" font-weight="600" fill="#2b2620">you already have.</text>
+
+    <text x="64" y="310" font-size="20" fill="#6b6255">No accounts. No API keys. No lock-in.</text>
+
+    <g font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace">
+      <rect x="64" y="334" width="440" height="52" rx="8" fill="#191714"/>
+      <text x="84" y="368" font-size="21" fill="#8fd694">$</text>
+      <text x="108" y="368" font-size="21" fill="#f4f1ea">npm install -g fixen-cli</text>
+    </g>
+
+    <text x="64" y="426" font-size="19" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace" fill="#6b6255">0 dependencies · node &#8805; 18 · MIT</text>
+    <path d="M64 444 L560 444" stroke="#e0d8c8" stroke-width="2"/>
+    <text x="64" y="478" font-size="18" fill="#6b6255">claude · codex · gjc · gemini · ollama · any API</text>
+  </g>
+
+  <!-- 우: 실제 출력 (README chat mode 예시 그대로) -->
+  <g>
+    <rect x="620" y="48" width="516" height="424" rx="14" fill="#191714"/>
+    <text x="652" y="88" font-size="17" font-weight="700" fill="#8a8072" letter-spacing="1.5" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">CHAT MODE · 채팅하다가 교정</text>
+    <path d="M652 104 L1104 104" stroke="#332d26" stroke-width="2"/>
+
+    <g font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace">
+      <text x="652" y="150" font-size="20" fill="#8fd694">$ gjc -p "hey what is capital</text>
+      <text x="652" y="178" font-size="20" fill="#8fd694">of france? my dream is go to</text>
+      <text x="652" y="206" font-size="20" fill="#8fd694">paris someday"</text>
+
+      <text x="652" y="252" font-size="20" fill="#b9b0a1">The capital of France is</text>
+      <text x="652" y="280" font-size="20" fill="#b9b0a1">Paris. ...</text>
+
+      <path d="M652 314 L1104 314" stroke="#4a423a" stroke-width="2" stroke-dasharray="10 8"/>
+
+      <text x="652" y="358" font-size="20" font-weight="700" fill="#e0603f">fixen:</text>
+      <text x="740" y="358" font-size="20" fill="#f4f1ea">My dream is to go</text>
+      <text x="652" y="386" font-size="20" fill="#f4f1ea">to Paris someday.</text>
+      <path d="M652 398 L860 398" stroke="#e0603f" stroke-width="3" stroke-linecap="round"/>
+    </g>
+
+    <text x="652" y="442" font-size="18" fill="#8a8072" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">묻는 건 쿠버네티스, 덤으로 영어 교정.</text>
+  </g>
+</svg>

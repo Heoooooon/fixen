@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Heoooooon/fixen/main/assets/banner.jpg" alt="fixen — Fix your English from the command line" width="720">
+  <img src="https://raw.githubusercontent.com/Heoooooon/fixen/main/assets/readme/hero.png" alt="fixen — fix your English from the command line with the LLM you already have. A chat transcript shows a question typed with mistakes, a normal answer, and a fixen line that corrects the user's own sentence." width="100%">
 </p>
 
 # fixen

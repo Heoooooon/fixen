@@ -15,7 +15,8 @@ const os = require("node:os");
 const path = require("node:path");
 const readline = require("node:readline");
 
-const VERSION = require("../package.json").version;
+const PKG = require("../package.json");
+const VERSION = PKG.version;
 
 const CONFIG_PATH = path.join(
   process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config"),
@@ -102,6 +103,14 @@ function loadConfig() {
   } catch {
     return {};
   }
+}
+
+// Truthiness for values that arrive as JSON booleans (config) or strings
+// (env vars). Returns undefined when unset, so the next source can win.
+function boolish(v) {
+  if (typeof v === "boolean") return v;
+  if (typeof v !== "string" || v.trim() === "") return undefined;
+  return !/^(0|false|no|off)$/i.test(v.trim());
 }
 
 function cleanOutput(text) {
@@ -319,10 +328,13 @@ function allTargets() {
 
 // One line carrying the essential behavior, so it works even in CLIs that
 // don't auto-read the referenced file.
-function pointerLine({ target }, pointer) {
+function pointerLine({ target, lang, explain }, pointer) {
+  // `\\n` stays escaped: it must reach the model as the two characters \n
+  // inside the quoted footer template, not as a real newline in the file.
+  const note = explain ? `\\n**fixen note:** <one short reason per fix, in ${lang}>` : "";
   return (
     `${START_MARK} fixen: if the ${target} the user wrote themselves in their latest message ` +
-    `has mistakes (ignore pasted text/code/quotes), append "\\n---\\n**fixen:** \\\`<corrected sentence>\\\`" ` +
+    `has mistakes (ignore pasted text/code/quotes), append "\\n---\\n**fixen:** \\\`<corrected sentence>\\\`${note}" ` +
     `after your normal answer; if it is correct, append nothing. Full rule: ${pointer} ${END_MARK}`
   );
 }
@@ -413,6 +425,156 @@ function cmdStatus() {
   }
 }
 
+// ---------------------------------------------------------------- update
+// `npm i -g` alone only swaps bin/fixen.js: RULE.md and the pointer lines keep
+// the wording of whatever version installed them. `fixen update` does both —
+// bump the package, then re-generate the rule with the newly installed code.
+
+const REGISTRY = (process.env.FIXEN_REGISTRY || "https://registry.npmjs.org").replace(/\/$/, "");
+const PKG_ROOT = path.resolve(__dirname, "..");
+
+// Semver-lite: numeric triple wins, then prerelease (any prerelease < release).
+// Enough for our own tags; we never compare arbitrary ranges.
+function cmpVersions(a, b) {
+  const parse = (v) => {
+    const s = String(v).trim().replace(/^v/, "").split("+")[0];
+    const i = s.indexOf("-");
+    return {
+      nums: (i === -1 ? s : s.slice(0, i)).split(".").map((n) => parseInt(n, 10) || 0),
+      pre: i === -1 ? "" : s.slice(i + 1),
+    };
+  };
+  const x = parse(a);
+  const y = parse(b);
+  for (let i = 0; i < 3; i++) {
+    const d = (x.nums[i] || 0) - (y.nums[i] || 0);
+    if (d !== 0) return d < 0 ? -1 : 1;
+  }
+  if (x.pre === y.pre) return 0;
+  if (!x.pre) return 1;
+  if (!y.pre) return -1;
+  return x.pre < y.pre ? -1 : 1;
+}
+
+async function latestVersion() {
+  let res;
+  try {
+    res = await fetch(`${REGISTRY}/${PKG.name}/latest`, {
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(10000),
+    });
+  } catch (e) {
+    fail(`cannot reach ${REGISTRY}: ${e.message}`);
+  }
+  if (!res.ok) fail(`registry HTTP ${res.status} for ${PKG.name}`);
+  const version = (await res.json()).version;
+  if (typeof version !== "string") fail("registry returned no version");
+  return version;
+}
+
+// A global install lives in <prefix>/lib/node_modules/<pkg>; a `npm link`ed or
+// git checkout does not. Never run a global install over someone's working copy.
+function installKind() {
+  if (fs.existsSync(path.join(PKG_ROOT, ".git"))) return "git";
+  if (path.basename(path.dirname(PKG_ROOT)) !== "node_modules") return "linked";
+  return "global";
+}
+
+// Best-effort guess from the install path, so pnpm/bun users don't get npm.
+function detectManager() {
+  const p = PKG_ROOT.split(path.sep).join("/");
+  if (/\/\.bun\//.test(p)) return "bun";
+  if (/\/pnpm\//i.test(p)) return "pnpm";
+  if (/\/[Yy]arn\//.test(p)) return "yarn";
+  return "npm";
+}
+
+const UPGRADE_ARGV = {
+  npm: (spec) => ["npm", "install", "-g", spec],
+  pnpm: (spec) => ["pnpm", "add", "-g", spec],
+  yarn: (spec) => ["yarn", "global", "add", spec],
+  bun: (spec) => ["bun", "add", "-g", spec],
+};
+
+function runUpgrade(spec) {
+  const custom = process.env.FIXEN_UPDATE_CMD;
+  if (custom) {
+    if (IS_WIN) fail("FIXEN_UPDATE_CMD needs a POSIX shell; run fixen under WSL on Windows.");
+    const cmd = custom.replaceAll("{spec}", spec);
+    process.stdout.write(OUT.dim(`run   ${cmd}`) + "\n");
+    return spawnSync("/bin/sh", ["-c", cmd], { stdio: "inherit" });
+  }
+  const argv = UPGRADE_ARGV[detectManager()](spec);
+  process.stdout.write(OUT.dim(`run   ${argv.join(" ")}`) + "\n");
+  return spawnSync(argv[0], argv.slice(1), { stdio: "inherit", shell: IS_WIN });
+}
+
+function chatInstalled() {
+  return allTargets().some(
+    (t) => fs.existsSync(t.file) && fs.readFileSync(t.file, "utf8").includes(START_MARK)
+  );
+}
+
+// After an upgrade this process is still the old code, so the rule has to be
+// written by the binary that was just installed — hence the re-exec.
+function refreshRule(opts, reexec) {
+  if (!chatInstalled()) {
+    process.stdout.write(OUT.dim("skip  chat mode not installed (run: fixen install)") + "\n");
+    return;
+  }
+  if (!reexec) {
+    cmdInstall({ ...opts, files: [] });
+    return;
+  }
+  const argv = ["install", "-t", opts.target, "-l", opts.lang, ...(opts.explain ? ["-e"] : [])];
+  const r = spawnSync(process.execPath, [process.argv[1], ...argv], { stdio: "inherit" });
+  if (r.status !== 0) fail("upgrade succeeded but 'fixen install' failed — run it manually");
+}
+
+async function cmdUpdate(opts) {
+  const done = statusLine(`checking ${PKG.name}`);
+  let latest;
+  try {
+    latest = await latestVersion();
+  } finally {
+    done();
+  }
+  const behind = cmpVersions(VERSION, latest) < 0;
+  process.stdout.write(`local  ${OUT.bold(VERSION)}\nlatest ${OUT.bold(latest)}\n`);
+
+  if (opts.check) {
+    if (behind) {
+      process.stdout.write(`${OUT.yellow("update")} available — run: ${OUT.bold("fixen update")}\n`);
+      process.exit(1);
+    }
+    process.stdout.write(`${OUT.green("ok")}    up to date\n`);
+    return;
+  }
+
+  if (!behind) {
+    process.stdout.write(`${OUT.green("ok")}    up to date\n`);
+    refreshRule(opts, false);
+    return;
+  }
+
+  const kind = installKind();
+  if (kind !== "global") {
+    const how = kind === "git" ? "git pull" : "reinstall it globally";
+    process.stdout.write(
+      `${OUT.yellow("warn")}  not a global install: ${OUT.dim(PKG_ROOT)}\n` +
+      `      ${how} to upgrade this copy — refusing to overwrite it with npm\n`
+    );
+    refreshRule(opts, false);
+    process.exit(1);
+  }
+
+  const r = runUpgrade(`${PKG.name}@latest`);
+  if (r.error) fail(`upgrade failed: ${r.error.message}`);
+  if (r.status !== 0) fail(`upgrade exited with code ${r.status}`);
+  process.stdout.write(`${OUT.green("ok")}    upgraded to ${OUT.bold(latest)}\n`);
+  refreshRule(opts, true);
+}
+
 // ---------------------------------------------------------------- CLI
 
 const HELP = `fixen ${VERSION} — corrects your writing (any language) using any LLM backend
@@ -430,17 +592,21 @@ Usage:
       tool's global instruction file
   fixen uninstall                     remove the rule and all pointer lines
   fixen status                        show where the rule is installed
+  fixen update [--check]              upgrade fixen, then rewrite the rule with
+                                      the new version (--check: report only)
 
 Options:
   -b, --backend <name>   claude | codex | gjc | gemini | ollama | api
                          (default: auto-detect, or config/FIXEN_BACKEND)
   -c, --command <tmpl>   custom shell command; {prompt} expands to the prompt,
                          otherwise the prompt is piped to stdin
-  -e, --explain          also explain what was fixed
+  -e, --explain          also explain what was fixed (config: "explain": true)
+      --no-explain       no explanations, even if the config enables them
   -l, --lang <lang>      language for explanations (default: English; e.g. Korean)
   -t, --target <lang>    language being corrected (default: English)
   -m, --model <model>    model for ollama/api backends
   -f, --file <path>      (install) extra instruction file to add the line to
+      --check            (update) only report versions; exit 1 if outdated
   -h, --help             show this help
   -v, --version          show version
 
@@ -448,12 +614,16 @@ Environment:
   FIXEN_BACKEND             default backend name
   FIXEN_BACKEND_CMD         default custom command template
   FIXEN_TARGET              default language being corrected
+  FIXEN_LANG                default language for explanations
+  FIXEN_EXPLAIN             1/true to explain by default
   FIXEN_MODEL               default model (ollama/api)
   FIXEN_API_URL             OpenAI-compatible base URL (default: api.openai.com/v1)
   FIXEN_API_KEY             API key for the 'api' backend
+  FIXEN_REGISTRY            npm registry for update (default: registry.npmjs.org)
+  FIXEN_UPDATE_CMD          custom upgrade command; {spec} → fixen-cli@latest
 
 Config (~/.config/fixen/config.json):
-  { "backend": "claude", "command": null, "model": null, "lang": "Korean", "target": "English" }
+  { "backend": "claude", "command": null, "model": null, "lang": "Korean", "target": "English", "explain": true }
 
 Examples:
   fixen "I has a apple"
@@ -462,7 +632,8 @@ Examples:
   fixen -b ollama -m llama3.1 "he dont know nothing"
   fixen -c 'my-llm --quiet {prompt}' "its a beautiful day"
   fixen install -t English -e -l Korean
-  fixen install -f ~/.someai/INSTRUCTIONS.md`;
+  fixen install -f ~/.someai/INSTRUCTIONS.md
+  fixen update --check`;
 
 // Syntax-highlights HELP for color TTYs: bold section headers, cyan flags,
 // env vars, and subcommands. Plain HELP everywhere else.
@@ -471,9 +642,10 @@ function renderHelp() {
   return HELP
     .replace(/^fixen [^\s]+/, (m) => `${OUT.bold(OUT.cyan("fixen"))} ${OUT.dim(m.slice(6))}`)
     .replace(/^(Usage|Options|Environment|Config[^\n]*|Examples):$/gm, (m) => OUT.bold(m))
-    .replace(/^(  fixen) (install|uninstall|status)/gm, (_, f, sub) => `${f} ${OUT.cyan(sub)}`)
+    .replace(/^(  fixen) (install|uninstall|status|update)/gm, (_, f, sub) => `${f} ${OUT.cyan(sub)}`)
     .replace(/^(  )(-[a-zA-Z], --[a-z-]+)/gm, (_, pad, flags) => pad + OUT.cyan(flags))
-    .replace(/^(  )(FIXEN_[A-Z_]+)/gm, (_, pad, v) => pad + OUT.cyan(v));
+    .replace(/^(  )(FIXEN_[A-Z_]+)/gm, (_, pad, v) => pad + OUT.cyan(v))
+    .replace(/^(      )(--[a-z-]+)/gm, (_, pad, f) => pad + OUT.cyan(f));
 }
 
 function parseArgs(argv) {
@@ -484,6 +656,8 @@ function parseArgs(argv) {
       case "-h": case "--help": process.stdout.write(renderHelp() + "\n"); process.exit(0);
       case "-v": case "--version": process.stdout.write(VERSION + "\n"); process.exit(0);
       case "-e": case "--explain": opts.explain = true; break;
+      case "--no-explain": opts.explain = false; break;
+      case "--check": opts.check = true; break;
       case "-b": case "--backend": opts.backend = argv[++i]; break;
       case "-c": case "--command": opts.command = argv[++i]; break;
       case "-l": case "--lang": opts.lang = argv[++i]; break;
@@ -537,13 +711,16 @@ async function main() {
   opts.command ??= process.env.FIXEN_BACKEND_CMD || cfg.command || undefined;
   opts.backend ??= process.env.FIXEN_BACKEND || cfg.backend || undefined;
   opts.model ??= process.env.FIXEN_MODEL || cfg.model || undefined;
-  opts.lang ??= cfg.lang || "English";
+  opts.lang ??= process.env.FIXEN_LANG || cfg.lang || "English";
   opts.target ??= process.env.FIXEN_TARGET || cfg.target || "English";
+  // -e / --no-explain win; only an untouched flag falls through to env, config.
+  opts.explain ??= boolish(process.env.FIXEN_EXPLAIN) ?? boolish(cfg.explain) ?? false;
 
   const sub = opts.words[0];
   if (sub === "install") { cmdInstall(opts); return; }
   if (sub === "uninstall") { cmdUninstall(); return; }
   if (sub === "status") { cmdStatus(); return; }
+  if (sub === "update") { await cmdUpdate(opts); return; }
 
   if (!opts.command && !opts.backend) {
     opts.backend = detectBackend();

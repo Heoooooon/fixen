@@ -29,6 +29,15 @@ Requires Node.js ≥ 18 and at least one [backend](#backends) — if you can run
 
 **Platform:** macOS and Linux are fully supported. On Windows, the `ollama` and `api` backends work natively, but the AI-CLI backends and `-c/--command` need a POSIX shell — run fixen under WSL.
 
+### Updating
+
+```sh
+fixen update            # upgrade the package, then rewrite the rule with the new version
+fixen update --check    # just compare versions (exit 1 if outdated) — safe for scripts
+```
+
+`npm install -g fixen-cli@latest` only replaces the binary: `RULE.md` and the one-liners in your CLIs keep the wording of whatever version wrote them. `fixen update` does both halves — it detects your package manager from the install path (npm, pnpm, yarn, bun; override with `FIXEN_UPDATE_CMD`), upgrades, then re-runs `install` with the *new* binary so the rule matches the new code. A `git`/`npm link` checkout is never overwritten: it reports where the copy lives and refreshes only the rule.
+
 ## Usage
 
 ```sh
@@ -73,7 +82,8 @@ Details that keep it polite:
 - Only fires when *your own* writing has mistakes — correct sentences, pasted code, logs, and quotes are left alone.
 - `fixen install -t Japanese` watches Japanese instead; `-e -l Korean` adds one-line reasons in Korean.
 - Your existing CLAUDE.md/AGENTS.md content is untouched: one marker-wrapped line in, one line out. For Claude Code the line uses the native `@~/.config/fixen/RULE.md` import, so the full rule is inlined automatically.
-- `fixen uninstall` removes every trace (pointer lines and the rule file); `fixen status` shows where it's active. Re-running `install` is idempotent and upgrades old-style installs in place.
+- `fixen uninstall` removes every trace (pointer lines and the rule file); `fixen status` shows where it's active. Re-running `install` is idempotent and upgrades old-style installs in place, and [`fixen update`](#updating) does that for you after every version bump.
+- `install` regenerates the rule from the flags and config it sees, so a bare `fixen install` after `fixen install -t Japanese -e` falls back to defaults — keep `"target"`, `"lang"`, and `"explain"` in `config.json` instead of retyping flags.
 - Applies to new chat sessions.
 
 ## Backends
@@ -112,14 +122,14 @@ fixen -b api "sentence"
 Defaults live in `~/.config/fixen/config.json`:
 
 ```json
-{ "backend": "claude", "model": null, "command": null, "lang": "Korean", "target": "English" }
+{ "backend": "claude", "model": null, "command": null, "lang": "Korean", "target": "English", "explain": true }
 ```
 
-Environment variables `FIXEN_BACKEND`, `FIXEN_BACKEND_CMD`, `FIXEN_TARGET`, `FIXEN_MODEL`, `FIXEN_API_URL`, `FIXEN_API_KEY` override the config; CLI flags override everything.
+Environment variables `FIXEN_BACKEND`, `FIXEN_BACKEND_CMD`, `FIXEN_TARGET`, `FIXEN_LANG`, `FIXEN_EXPLAIN`, `FIXEN_MODEL`, `FIXEN_API_URL`, `FIXEN_API_KEY` override the config; CLI flags override everything (`--no-explain` turns off a config-enabled `explain` for one run).
 
 ## Why fixen
 
-- **Zero dependencies.** One file, ~18 KB unpacked. `npm install` finishes before you blink.
+- **Zero dependencies.** One file, ~29 KB unpacked. `npm install` finishes before you blink.
 - **Bring your own model.** Your existing CLI subscription or a local `ollama` model — fixen doesn't care and never sees your text itself.
 - **Any language.** English by default; `-t` corrects Japanese, French, German, anything.
 - **Reversible.** `fixen uninstall` puts every touched file back exactly as it was.

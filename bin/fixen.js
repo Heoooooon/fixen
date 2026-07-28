@@ -121,8 +121,9 @@ function cleanOutput(text) {
   // quoted, so dialogue like `"Hi," he said, "bye."` is left intact
   if (/^"[^"]*"$/s.test(out)) out = out.slice(1, -1);
   // strip a trailing chat-mode footer: with `fixen install` active, backend
-  // CLIs may append their own "---\nfixen: ..." to our one-shot correction
-  out = out.replace(/\n+-{3,}\s*\nfixen:[\s\S]*$/, "");
+  // CLIs may append their own "> **fixen** · ..." (or the pre-0.1.8 "---\nfixen:"
+  // form) to our one-shot correction
+  out = out.replace(/\n+(?:-{3,}\s*\n\s*\*{0,2}fixen\*{0,2}\s*:|>?\s*\*{0,2}fixen\*{0,2}\s*·)[\s\S]*$/, "");
   return out.trim();
 }
 
@@ -331,10 +332,11 @@ function allTargets() {
 function pointerLine({ target, lang, explain }, pointer) {
   // `\\n` stays escaped: it must reach the model as the two characters \n
   // inside the quoted footer template, not as a real newline in the file.
-  const note = explain ? `\\n**fixen note:** <one short reason per fix, in ${lang}>` : "";
+  const note = explain ? `\\n> ↳ <one short reason per fix, in ${lang}>` : "";
   return (
     `${START_MARK} fixen: if the ${target} the user wrote themselves in their latest message ` +
-    `has mistakes (ignore pasted text/code/quotes), append "\\n---\\n**fixen:** \\\`<corrected sentence>\\\`${note}" ` +
+    `has mistakes (ignore pasted text/code/quotes), append "\\n> **fixen** · <corrected sentence, ` +
+    `with **bold** on the changed words only>${note}" ` +
     `after your normal answer; if it is correct, append nothing. Full rule: ${pointer} ${END_MARK}`
   );
 }
@@ -351,11 +353,12 @@ The user is practicing ${t}. In EVERY reply, after answering normally, review th
 
 If their ${t} contains grammar, spelling, or naturalness mistakes, end the reply with this footer:
 
----
-**fixen:** \`<corrected version of what the user wrote>\`${explain ? `\n**fixen note:** <one short reason per fix, written in ${lang}>` : ""}
+> **fixen** · <corrected version of what the user wrote>${explain ? `\n> ↳ <one short reason per fix, written in ${lang}>` : ""}
 
 Rules:
-- One corrected line per mistaken sentence; skip sentences that are already fine.
+- Every footer line starts with \`> \` so it renders as one quoted block, set apart from the answer.
+- Inside the corrected sentence, bold **only the words you changed** (\`I **am** going\`, \`됐지**?**\`). Never bold the whole sentence, and never wrap it in backticks — a backtick span stretches CJK text.
+- One corrected line per mistaken sentence; skip sentences that are already fine. The \`**fixen** ·\` label appears once; further corrected sentences get their own \`> \` line without it.
 - If the user's ${t} is fully correct and natural, or the message contains no user-written ${t}, append nothing — no footer at all.
 - The footer never replaces or shortens the actual answer.`;
 }

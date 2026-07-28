@@ -63,8 +63,8 @@ ok    gjc:    ~/.gjc/agent/AGENTS.md (one line added)
 $ gjc -p "hey what is capital of france? my dream is go to paris someday"
 The capital of France is Paris. ...
 
----
-fixen: My dream is to go to Paris someday.
+> **fixen** · My dream is **to** go to Paris someday.
+> ↳ '가다'는 to부정사로 — go → to go
 ```
 
 Ask about Kubernetes, get better English on the side. Every message you type is a free micro-lesson.

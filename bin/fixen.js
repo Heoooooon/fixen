@@ -98,9 +98,18 @@ function which(cmd) {
 }
 
 function loadConfig() {
+  let raw;
   try {
-    return JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
+    raw = fs.readFileSync(CONFIG_PATH, "utf8");
   } catch {
+    return {}; // no config file — normal
+  }
+  try {
+    return JSON.parse(raw);
+  } catch (e) {
+    process.stderr.write(
+      `${ERR.red("fixen:")} ignoring malformed config ${CONFIG_PATH}: ${e.message}\n`
+    );
     return {};
   }
 }
@@ -153,6 +162,8 @@ function buildPrompt(sentence, { explain, lang, target }) {
 
 // ---------------------------------------------------------------- backends
 
+// Throws (rather than fail()s) so withRetry can catch a transient failure;
+// correct() turns the final, out-of-retries failure into fail().
 function runArgv(argv, { stdin } = {}) {
   const r = spawnSync(argv[0], argv.slice(1), {
     input: stdin,
@@ -160,22 +171,24 @@ function runArgv(argv, { stdin } = {}) {
     maxBuffer: 16 * 1024 * 1024,
   });
   if (r.error) {
-    fail(`failed to run '${argv[0]}': ${r.error.message}${IS_WIN ? WIN_HINT : ""}`);
+    throw new Error(`failed to run '${argv[0]}': ${r.error.message}${IS_WIN ? WIN_HINT : ""}`);
   }
   if (r.status !== 0) {
     const detail = [r.stdout, r.stderr].map((s) => (s || "").trim()).filter(Boolean).join("\n");
-    fail(`backend '${argv[0]}' exited with code ${r.status}\n${detail}`);
+    throw new Error(`backend '${argv[0]}' exited with code ${r.status}\n${detail}`);
   }
   return r.stdout;
 }
 
 const BACKENDS = {
-  claude(prompt) {
-    return runArgv(["claude", "-p", prompt]);
+  // Prompt goes via stdin, not argv: argv caps out at ARG_MAX (~1 MB on
+  // macOS), which a piped document can blow past. All three CLIs read stdin.
+  claude(prompt, { model }) {
+    return runArgv(["claude", "-p", ...(model ? ["--model", model] : [])], { stdin: prompt });
   },
 
   gjc(prompt) {
-    return runArgv(["gjc", "-p", prompt]);
+    return runArgv(["gjc", "-p"], { stdin: prompt });
   },
 
   codex(prompt) {
@@ -198,16 +211,21 @@ const BACKENDS = {
     return runArgv(["ollama", "run", model || "llama3.1"], { stdin: prompt });
   },
 
-  gemini(prompt) {
-    return runArgv(["gemini", "-p", prompt]);
+  gemini(prompt, { model }) {
+    return runArgv(["gemini", "-p", ...(model ? ["-m", model] : [])], { stdin: prompt });
   },
 };
 
 async function apiBackend(prompt, { model }) {
   const base = (process.env.FIXEN_API_URL || "https://api.openai.com/v1").replace(/\/$/, "");
   const key = process.env.FIXEN_API_KEY || process.env.OPENAI_API_KEY;
+  // Config errors fail() outright — deterministic, never worth a retry.
   if (!key) fail("api backend needs FIXEN_API_KEY (or OPENAI_API_KEY)");
+  // A hung server must not hang fixen forever; FIXEN_API_TIMEOUT overrides
+  // (seconds; 0 disables). A correction never needs two minutes.
+  const timeoutS = Number(process.env.FIXEN_API_TIMEOUT ?? 120);
   const res = await fetch(`${base}/chat/completions`, {
+    signal: timeoutS > 0 ? AbortSignal.timeout(timeoutS * 1000) : undefined,
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -219,10 +237,10 @@ async function apiBackend(prompt, { model }) {
       temperature: 0,
     }),
   });
-  if (!res.ok) fail(`api backend HTTP ${res.status}: ${(await res.text()).slice(0, 400)}`);
+  if (!res.ok) throw new Error(`api backend HTTP ${res.status}: ${(await res.text()).slice(0, 400)}`);
   const data = await res.json();
   const text = data.choices?.[0]?.message?.content;
-  if (typeof text !== "string") fail("api backend returned no message content");
+  if (typeof text !== "string") throw new Error("api backend returned no message content");
   return text;
 }
 
@@ -239,7 +257,7 @@ function customBackend(template, prompt) {
     maxBuffer: 16 * 1024 * 1024,
   });
   if (r.status !== 0) {
-    fail(`custom backend exited with code ${r.status}\n${(r.stderr || "").trim()}`);
+    throw new Error(`custom backend exited with code ${r.status}\n${(r.stderr || "").trim()}`);
   }
   return r.stdout;
 }
@@ -252,15 +270,47 @@ function detectBackend() {
   return null;
 }
 
+// ---------------------------------------------------------------- retry
+// Backends flake — a CLI shim crashes, an API 500s, wifi blips. Each
+// attempt throws into withRetry, which retries up to FIXEN_RETRIES times
+// (default 1) with a stderr warning per retry; correct() surfaces the
+// final failure.
+
+function retryCount() {
+  const raw = process.env.FIXEN_RETRIES;
+  if (raw === undefined || raw.trim() === "") return 1;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) && n >= 0 ? n : 1;
+}
+
+async function withRetry(label, fn) {
+  const retries = retryCount();
+  let lastError;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastError = e;
+      if (attempt < retries) {
+        const first = String(e.message).split("\n")[0];
+        process.stderr.write(
+          `${ERR.yellow("retry")} ${label} failed (${first}) — retrying (${attempt + 1}/${retries})…\n`
+        );
+      }
+    }
+  }
+  throw lastError;
+}
+
 async function correct(sentence, opts) {
   const prompt = buildPrompt(sentence, opts);
   let raw;
   if (opts.command) {
-    raw = customBackend(opts.command, prompt);
+    raw = await withRetry("custom", () => customBackend(opts.command, prompt));
   } else if (opts.backend === "api") {
-    raw = await apiBackend(prompt, opts);
+    raw = await withRetry("api", () => apiBackend(prompt, opts));
   } else if (BACKENDS[opts.backend]) {
-    raw = BACKENDS[opts.backend](prompt, opts);
+    raw = await withRetry(opts.backend, () => BACKENDS[opts.backend](prompt, opts));
   } else {
     fail(`unknown backend '${opts.backend}' (try: ${Object.keys(BACKENDS).join(", ")}, api)`);
   }
@@ -303,6 +353,9 @@ const INSTALL_TARGETS = [
   target("windsurf", [".codeium", "windsurf"], [".codeium", "windsurf", "memories", "global_rules.md"]),
   target("goose", [".config", "goose"], [".config", "goose", ".goosehints"]),
   target("crush", [".config", "crush"], [".config", "crush", "CRUSH.md"]),
+  // Cline keeps global rules as .md files in a directory, not one shared
+  // instruction file — fixen gets its own file there.
+  target("cline", ["Documents", "Cline"], ["Documents", "Cline", "Rules", "fixen.md"]),
 ];
 
 function customTarget(file) {
@@ -402,8 +455,8 @@ function cmdUninstall() {
       continue;
     }
     const stripped = prev.replace(BLOCK_RE, "\n").trim();
-    if (stripped) fs.writeFileSync(t.file, stripped + "\n");
-    else fs.rmSync(t.file);
+    // Rewrite, never delete: the file may have existed (even empty) before us.
+    fs.writeFileSync(t.file, stripped ? stripped + "\n" : "");
     process.stdout.write(`${OUT.green("ok")}    ${OUT.bold(t.name)}: removed\n`);
   }
   for (const f of [RULE_FILE, MANIFEST_FILE]) {
@@ -456,7 +509,28 @@ function cmpVersions(a, b) {
   if (x.pre === y.pre) return 0;
   if (!x.pre) return 1;
   if (!y.pre) return -1;
-  return x.pre < y.pre ? -1 : 1;
+  // Dot-wise semver ordering: numeric segments compare as numbers (rc.10 >
+  // rc.2), a numeric segment sorts before an alphanumeric one, otherwise
+  // lexicographic.
+  const xs = x.pre.split(".");
+  const ys = y.pre.split(".");
+  for (let i = 0; i < Math.max(xs.length, ys.length); i++) {
+    const a = xs[i];
+    const b = ys[i];
+    if (a === undefined) return -1;
+    if (b === undefined) return 1;
+    const an = /^\d+$/.test(a);
+    const bn = /^\d+$/.test(b);
+    if (an && bn) {
+      const d = parseInt(a, 10) - parseInt(b, 10);
+      if (d !== 0) return d < 0 ? -1 : 1;
+    } else if (an !== bn) {
+      return an ? -1 : 1;
+    } else if (a !== b) {
+      return a < b ? -1 : 1;
+    }
+  }
+  return 0;
 }
 
 async function latestVersion() {
@@ -503,6 +577,7 @@ function runUpgrade(spec) {
   const custom = process.env.FIXEN_UPDATE_CMD;
   if (custom) {
     if (IS_WIN) fail("FIXEN_UPDATE_CMD needs a POSIX shell; run fixen under WSL on Windows.");
+    if (!custom.includes("{spec}")) fail("FIXEN_UPDATE_CMD must contain {spec} — it expands to fixen-cli@latest");
     const cmd = custom.replaceAll("{spec}", spec);
     process.stdout.write(OUT.dim(`run   ${cmd}`) + "\n");
     return spawnSync("/bin/sh", ["-c", cmd], { stdio: "inherit" });
@@ -586,11 +661,12 @@ Usage:
   fixen [options] <sentence...>       correct a sentence
   echo "sentence" | fixen [options]   correct stdin
   fixen [options]                     interactive mode (TTY)
+  fixen -- <word...>                  force args to be read as text, never a subcommand
 
   fixen install [-t <lang>] [-e] [-l <lang>] [-f <file>]...
       write the rule to ~/.config/fixen/RULE.md and add one pointer line to
       the global instructions of every installed AI CLI (claude, codex, gjc,
-      gemini, qwen, opencode, windsurf, goose, crush) so every normal chat
+      gemini, qwen, opencode, windsurf, goose, crush, cline) so every normal chat
       reply ends with a correction of what you typed; -f targets any other
       tool's global instruction file
   fixen uninstall                     remove the rule and all pointer lines
@@ -607,7 +683,7 @@ Options:
       --no-explain       no explanations, even if the config enables them
   -l, --lang <lang>      language for explanations (default: English; e.g. Korean)
   -t, --target <lang>    language being corrected (default: English)
-  -m, --model <model>    model for ollama/api backends
+  -m, --model <model>    model for claude/gemini/ollama/api backends
   -f, --file <path>      (install) extra instruction file to add the line to
       --check            (update) only report versions; exit 1 if outdated
   -h, --help             show this help
@@ -622,8 +698,11 @@ Environment:
   FIXEN_MODEL               default model (ollama/api)
   FIXEN_API_URL             OpenAI-compatible base URL (default: api.openai.com/v1)
   FIXEN_API_KEY             API key for the 'api' backend
+  FIXEN_API_TIMEOUT         seconds before the api backend gives up (default 120; 0 = never)
+  FIXEN_RETRIES             retries per backend failure (default 1; 0 = never)
   FIXEN_REGISTRY            npm registry for update (default: registry.npmjs.org)
-  FIXEN_UPDATE_CMD          custom upgrade command; {spec} → fixen-cli@latest
+  FIXEN_UPDATE_CMD          custom upgrade command; must contain {spec} → fixen-cli@latest
+  FIXEN_DEBUG               1 to print stack traces on unexpected errors
 
 Config (~/.config/fixen/config.json):
   { "backend": "claude", "command": null, "model": null, "lang": "Korean", "target": "English", "explain": true }
@@ -651,6 +730,14 @@ function renderHelp() {
     .replace(/^(      )(--[a-z-]+)/gm, (_, pad, f) => pad + OUT.cyan(f));
 }
 
+// A flag with no value (last on the command line) must fail loudly: storing
+// undefined would silently fall through to auto-detection and defaults.
+function flagValue(argv, i, flag) {
+  const v = argv[i + 1];
+  if (v === undefined) fail(`option ${flag} requires a value (see fixen --help)`);
+  return v;
+}
+
 function parseArgs(argv) {
   const opts = { words: [] };
   for (let i = 0; i < argv.length; i++) {
@@ -661,13 +748,13 @@ function parseArgs(argv) {
       case "-e": case "--explain": opts.explain = true; break;
       case "--no-explain": opts.explain = false; break;
       case "--check": opts.check = true; break;
-      case "-b": case "--backend": opts.backend = argv[++i]; break;
-      case "-c": case "--command": opts.command = argv[++i]; break;
-      case "-l": case "--lang": opts.lang = argv[++i]; break;
-      case "-t": case "--target": opts.target = argv[++i]; break;
-      case "-m": case "--model": opts.model = argv[++i]; break;
-      case "-f": case "--file": (opts.files ??= []).push(argv[++i]); break;
-      case "--": opts.words.push(...argv.slice(i + 1)); i = argv.length; break;
+      case "-b": case "--backend": opts.backend = flagValue(argv, i, a); i++; break;
+      case "-c": case "--command": opts.command = flagValue(argv, i, a); i++; break;
+      case "-l": case "--lang": opts.lang = flagValue(argv, i, a); i++; break;
+      case "-t": case "--target": opts.target = flagValue(argv, i, a); i++; break;
+      case "-m": case "--model": opts.model = flagValue(argv, i, a); i++; break;
+      case "-f": case "--file": (opts.files ??= []).push(flagValue(argv, i, a)); i++; break;
+      case "--": opts.dashdash = true; opts.words.push(...argv.slice(i + 1)); i = argv.length; break;
       default:
         if (a.startsWith("-") && a !== "-") fail(`unknown option '${a}' (see fixen --help)`);
         opts.words.push(a);
@@ -719,7 +806,9 @@ async function main() {
   // -e / --no-explain win; only an untouched flag falls through to env, config.
   opts.explain ??= boolish(process.env.FIXEN_EXPLAIN) ?? boolish(cfg.explain) ?? false;
 
-  const sub = opts.words[0];
+  // Subcommands dispatch only as a lone argument, so `fixen status is great`
+  // corrects a sentence instead of running cmdStatus; `--` forces text.
+  const sub = !opts.dashdash && opts.words.length === 1 ? opts.words[0] : undefined;
   if (sub === "install") { cmdInstall(opts); return; }
   if (sub === "uninstall") { cmdUninstall(); return; }
   if (sub === "status") { cmdStatus(); return; }
@@ -738,7 +827,13 @@ async function main() {
   const backend = opts.command ? "custom" : opts.backend;
   if (opts.words.length > 0) {
     const done = statusLine(backend);
-    const out = await correct(opts.words.join(" "), opts);
+    let out;
+    try {
+      out = await correct(opts.words.join(" "), opts);
+    } catch (e) {
+      done();
+      fail(e.message);
+    }
     done();
     process.stdout.write(prettyResult(out, opts) + "\n");
   } else if (!process.stdin.isTTY) {
@@ -746,10 +841,35 @@ async function main() {
     for await (const c of process.stdin) chunks.push(c);
     const text = Buffer.concat(chunks).toString("utf8").trim();
     if (!text) fail("empty input");
-    process.stdout.write(prettyResult(await correct(text, opts), opts) + "\n");
+    let out;
+    try {
+      out = await correct(text, opts);
+    } catch (e) {
+      fail(e.message);
+    }
+    process.stdout.write(prettyResult(out, opts) + "\n");
   } else {
     await interactive(opts);
   }
 }
 
-main().catch((e) => fail(e.message));
+// Run only when executed directly, so tests can require() the pure functions
+// below without triggering the CLI (and its process.exit paths).
+if (require.main === module) {
+  main().catch((e) => {
+    if (process.env.FIXEN_DEBUG) process.stderr.write((e.stack || String(e)) + "\n");
+    fail(e.message);
+  });
+}
+
+module.exports = {
+  START_MARK,
+  END_MARK,
+  buildPrompt,
+  cleanOutput,
+  boolish,
+  cmpVersions,
+  pointerLine,
+  ruleText,
+  parseArgs,
+};

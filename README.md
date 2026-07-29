@@ -69,7 +69,7 @@ The capital of France is Paris. ...
 
 Ask about Kubernetes, get better English on the side. Every message you type is a free micro-lesson.
 
-Out of the box it knows the global instruction files of **claude, codex, gjc, gemini, qwen, opencode, windsurf, goose, and crush** — only the ones actually present are touched. Using something else? Point at its instruction file directly (tracked in a manifest, so `uninstall` cleans it too):
+Out of the box it knows the global instruction locations of **claude, codex, gjc, gemini, qwen, opencode, windsurf, goose, crush, and cline** — only the ones actually present are touched. Using something else? Point at its instruction file directly (tracked in a manifest, so `uninstall` cleans it too):
 
 ```sh
 fixen install -f ~/.someai/INSTRUCTIONS.md
@@ -123,7 +123,7 @@ Defaults live in `~/.config/fixen/config.json`:
 { "backend": "claude", "model": null, "command": null, "lang": "Korean", "target": "English", "explain": true }
 ```
 
-Environment variables `FIXEN_BACKEND`, `FIXEN_BACKEND_CMD`, `FIXEN_TARGET`, `FIXEN_LANG`, `FIXEN_EXPLAIN`, `FIXEN_MODEL`, `FIXEN_API_URL`, `FIXEN_API_KEY` override the config; CLI flags override everything (`--no-explain` turns off a config-enabled `explain` for one run).
+Environment variables `FIXEN_BACKEND`, `FIXEN_BACKEND_CMD`, `FIXEN_TARGET`, `FIXEN_LANG`, `FIXEN_EXPLAIN`, `FIXEN_MODEL`, `FIXEN_API_URL`, `FIXEN_API_KEY` override the config; CLI flags override everything (`--no-explain` turns off a config-enabled `explain` for one run). A failed backend attempt is retried once; tune with `FIXEN_RETRIES` (0 disables retries).
 
 ## Why fixen
 

@@ -170,7 +170,7 @@ Environment variables `FIXEN_BACKEND`, `FIXEN_BACKEND_CMD`, `FIXEN_TARGET`, `FIX
 
 ## Why fixen
 
-- **Zero dependencies.** One file, ~29 KB unpacked. `npm install` finishes before you blink.
+- **Zero dependencies.** One file, ~55 KB unpacked. `npm install` finishes before you blink.
 - **Bring your own model.** Your existing CLI subscription or a local `ollama` model — fixen doesn't care and never sees your text itself.
 - **Any language.** English by default; `-t` corrects Japanese, French, German, anything.
 - **Reversible.** `fixen uninstall` puts every touched file back exactly as it was.

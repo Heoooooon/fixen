@@ -127,6 +127,8 @@ fixen install -e -l Korean -f .kiro/steering/fixen.md
 
 Desktop notifications use built-in macOS notifications or `notify-send` on Linux. `FIXEN_NOTIFY_DISABLE=1` saves without displaying, `FIXEN_CORRECTION_TTL` changes the record lifetime (maximum seven days), and `FIXEN_SIDECAR_TIMEOUT` changes the worker deadline.
 
+> **macOS banners are silent-fail.** The macOS path posts through `osascript`, so the banner is attributed to **Script Editor** — not to fixen. If Script Editor is off in **System Settings → Notifications**, or a Focus mode is active, macOS drops the banner and still reports success; fixen cannot detect this. The correction is always saved either way, so `fixen --last` shows what a missing banner would have said.
+
 ## Backends
 
 Auto-detected in this order: `claude` → `codex` → `gjc` → `gemini` → `ollama` → `api` (if an API key is set). Pick one explicitly with `-b`:

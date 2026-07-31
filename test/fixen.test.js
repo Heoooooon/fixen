@@ -641,3 +641,80 @@ test("sidecar flags: conflicting modes and stray text are rejected", () => {
   );
   assert.match(run(["--notify", "--job", "../escape"], home).stderr, /invalid sidecar job id/);
 });
+
+// ---------------------------------------------------- notification content
+
+const rec = (original, corrected, notes = []) => ({
+  original,
+  corrected,
+  notes,
+  target: "English",
+});
+
+test("correctionHeadline: a single word fix reads as an arrow", () => {
+  assert.equal(
+    fx.correctionHeadline(rec("its a beautiful day", "it's a beautiful day")),
+    "its → it's"
+  );
+});
+
+test("correctionHeadline: separate fixes are joined, adjacent ones stay one run", () => {
+  assert.equal(
+    fx.correctionHeadline(rec("i dont knows it", "i don't know it")),
+    "dont knows → don't know"
+  );
+  assert.equal(
+    fx.correctionHeadline(rec("he go there and she go home", "he goes there and she goes home")),
+    "go → goes · go → goes"
+  );
+});
+
+test("correctionHeadline: pure insertions and deletions are signed", () => {
+  assert.equal(fx.correctionHeadline(rec("i went store", "i went to the store")), "+ to the");
+  assert.equal(fx.correctionHeadline(rec("discuss about it", "discuss it")), "− about");
+});
+
+test("correctionHeadline: an overlong diff is truncated with a remainder count", () => {
+  const original = Array.from({ length: 12 }, (_, i) => `w${i} bad${i}`).join(" ");
+  const corrected = Array.from({ length: 12 }, (_, i) => `w${i} good${i}`).join(" ");
+  const headline = fx.correctionHeadline(rec(original, corrected));
+  assert.ok(Array.from(headline).length <= 64, headline);
+  assert.match(headline, /\+\d+$/);
+});
+
+test("correctionHeadline: identical excerpts fall back to the sentence", () => {
+  assert.equal(fx.correctionHeadline(rec("same text", "same text")), "same text");
+});
+
+test("correctionHeadline: a pathologically long excerpt still produces a bounded line", () => {
+  const original = "a ".repeat(400).trim();
+  const corrected = "b ".repeat(400).trim();
+  const headline = fx.correctionHeadline(rec(original, corrected));
+  assert.ok(Array.from(headline).length <= 64);
+  assert.ok(headline.length > 0);
+});
+
+test("notificationContent: fix leads, sentence and reason follow", () => {
+  const c = fx.notificationContent(
+    rec("its a beautiful day", "it's a beautiful day", ["소유격이 아니라 축약형입니다"])
+  );
+  assert.equal(c.title, "its → it's");
+  assert.equal(c.subtitle, "it's a beautiful day");
+  assert.equal(c.body, "소유격이 아니라 축약형입니다");
+});
+
+test("notificationContent: without notes the body carries the brand", () => {
+  const c = fx.notificationContent(rec("its me", "it's me"));
+  assert.equal(c.title, "its → it's");
+  assert.equal(c.body, "fixen · English");
+});
+
+test("notificationContent: multiple notes are joined and every field is bounded", () => {
+  const c = fx.notificationContent(
+    rec("its me", "it's me", ["reason one", "reason two", "x".repeat(400)])
+  );
+  assert.match(c.body, /reason one · reason two/);
+  assert.ok(Array.from(c.title).length <= 64);
+  assert.ok(Array.from(c.subtitle).length <= 100);
+  assert.ok(Array.from(c.body).length <= 200);
+});

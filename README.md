@@ -125,9 +125,11 @@ Keep the footer rule as a separate agent hook for hybrid mode. That preserves th
 fixen install -e -l Korean -f .kiro/steering/fixen.md
 ```
 
-Desktop notifications use built-in macOS notifications or `notify-send` on Linux. `FIXEN_NOTIFY_DISABLE=1` saves without displaying, `FIXEN_CORRECTION_TTL` changes the record lifetime (maximum seven days), and `FIXEN_SIDECAR_TIMEOUT` changes the worker deadline.
+Desktop notifications lead with the actual fix — `its → it's` — then the corrected sentence, then the reason. `FIXEN_NOTIFY_DISABLE=1` saves without displaying, `FIXEN_CORRECTION_TTL` changes the record lifetime (maximum seven days), and `FIXEN_SIDECAR_TIMEOUT` changes the worker deadline.
 
-> **macOS banners are silent-fail.** The macOS path posts through `osascript`, so the banner is attributed to **Script Editor** — not to fixen. If Script Editor is off in **System Settings → Notifications**, or a Focus mode is active, macOS drops the banner and still reports success; fixen cannot detect this. The correction is always saved either way, so `fixen --last` shows what a missing banner would have said.
+Delivery uses `terminal-notifier` when it is on `PATH` (`brew install terminal-notifier`), falling back to built-in macOS notifications, or `notify-send` on Linux. terminal-notifier is optional but nicer: banners are grouped, so a new correction replaces the previous one instead of stacking another card.
+
+> **macOS banners are silent-fail.** Banners are attributed to whatever posts them — **terminal-notifier**, or **Script Editor** on the `osascript` fallback — never to fixen itself. If that app is off in **System Settings → Notifications**, or a Focus mode is active, macOS drops the banner and still reports success; fixen cannot detect this. The correction is always saved either way, so `fixen --last` shows what a missing banner would have said.
 
 ## Backends
 

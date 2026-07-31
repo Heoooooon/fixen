@@ -567,14 +567,106 @@ function clipped(text, limit) {
   return chars.length <= limit ? flat : chars.slice(0, limit - 1).join("") + "…";
 }
 
+// A notification that only shows the fixed sentence hides the one thing worth
+// reading: what was wrong. Diff the two excerpts by word so the banner can lead
+// with "its → it's" instead of a sentence the reader has to re-scan.
+
+const DIFF_TOKEN_LIMIT = 200;
+
+function wordTokens(text) {
+  return String(text).match(/\S+/g) || [];
+}
+
+// Classic LCS backtrack, but consecutive edits are merged into one run so a
+// rewritten phrase reads as a single fragment rather than word-by-word noise.
+function diffRuns(before, after) {
+  if (before.length > DIFF_TOKEN_LIMIT || after.length > DIFF_TOKEN_LIMIT) {
+    return before.join(" ") === after.join(" ") ? [] : [{ before, after }];
+  }
+  const n = before.length;
+  const m = after.length;
+  const lcs = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      lcs[i][j] = before[i] === after[j]
+        ? lcs[i + 1][j + 1] + 1
+        : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
+    }
+  }
+  const runs = [];
+  let run = null;
+  const open = () => (run ??= { before: [], after: [] });
+  const close = () => {
+    if (run && (run.before.length || run.after.length)) runs.push(run);
+    run = null;
+  };
+  let i = 0;
+  let j = 0;
+  while (i < n && j < m) {
+    if (before[i] === after[j]) {
+      close();
+      i++;
+      j++;
+    } else if (lcs[i + 1][j] >= lcs[i][j + 1]) {
+      open().before.push(before[i++]);
+    } else {
+      open().after.push(after[j++]);
+    }
+  }
+  while (i < n) open().before.push(before[i++]);
+  while (j < m) open().after.push(after[j++]);
+  close();
+  return runs;
+}
+
+// "its → it's · dont → don't", trimmed to whatever fits one banner line.
+function correctionHeadline(record, limit = 64) {
+  const runs = diffRuns(wordTokens(record.original), wordTokens(record.corrected));
+  const fragments = runs.map(({ before, after }) => {
+    const from = before.join(" ");
+    const to = after.join(" ");
+    if (!from) return `+ ${to}`;
+    if (!to) return `− ${from}`;
+    return `${from} → ${to}`;
+  });
+  if (!fragments.length) return clipped(record.corrected, limit);
+
+  const kept = [];
+  for (const fragment of fragments) {
+    const next = [...kept, fragment].join(" · ");
+    if (kept.length && Array.from(next).length > limit) break;
+    kept.push(fragment);
+  }
+  const dropped = fragments.length - kept.length;
+  const headline = kept.join(" · ") + (dropped ? ` +${dropped}` : "");
+  return clipped(headline, limit);
+}
+
+function notificationContent(record) {
+  return {
+    // Lead with the fix; the sentence and the reason follow in reading order.
+    title: correctionHeadline(record),
+    subtitle: clipped(record.corrected, 100),
+    body: record.notes.length
+      ? clipped(record.notes.join(" · "), 200)
+      : `fixen · ${record.target}`,
+  };
+}
+
 function showDesktopNotification(record) {
   if (boolish(process.env.FIXEN_NOTIFY_DISABLE)) return;
-  const title = `fixen · ${record.target}`;
-  const subtitle = clipped(record.notes[0] || "Writing correction", 100);
-  const body = clipped(record.corrected, 240);
+  const { title, subtitle, body } = notificationContent(record);
 
   let result;
-  if (process.platform === "darwin") {
+  // terminal-notifier is optional, but it groups by thread — a new correction
+  // replaces the previous banner instead of stacking another card.
+  if (process.platform === "darwin" && which("terminal-notifier")) {
+    result = spawnSync(
+      "terminal-notifier",
+      ["-title", title, "-subtitle", subtitle, "-message", body, "-group", "fixen"],
+      { encoding: "utf8", timeout: 5000 }
+    );
+  } else if (process.platform === "darwin") {
     const script = [
       "on run argv",
       "set notificationTitle to item 1 of argv",
@@ -588,7 +680,7 @@ function showDesktopNotification(record) {
       timeout: 5000,
     });
   } else if (process.platform === "linux" && which("notify-send")) {
-    result = spawnSync("notify-send", [title, `${body}\n${subtitle}`], {
+    result = spawnSync("notify-send", [title, `${subtitle}\n${body}`], {
       encoding: "utf8",
       timeout: 5000,
     });
@@ -1489,6 +1581,8 @@ module.exports = {
   prepareSidecarText,
   extractHookPrompt,
   likelyContainsTarget,
+  correctionHeadline,
+  notificationContent,
   cleanOutput,
   boolish,
   cmpVersions,

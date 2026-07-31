@@ -100,6 +100,12 @@ function which(cmd) {
   return r.status === 0;
 }
 
+// POSIX single-quote escaping. Used for the one shell string fixen hands to
+// another program; model-authored text never reaches it.
+function shQuote(value) {
+  return `'${String(value).replaceAll("'", `'\\''`)}'`;
+}
+
 function loadConfig() {
   let raw;
   try {
@@ -653,19 +659,51 @@ function notificationContent(record) {
   };
 }
 
+// Clicking a banner should leave you with the fixed sentence ready to paste.
+// The click re-invokes fixen instead of embedding the text in a shell string,
+// so model-authored output is never handed to a shell.
+function clipboardCommand() {
+  if (process.platform === "darwin") return ["pbcopy", []];
+  if (which("wl-copy")) return ["wl-copy", []];
+  if (which("xclip")) return ["xclip", ["-selection", "clipboard"]];
+  return null;
+}
+
+function copyToClipboard(text) {
+  const target = clipboardCommand();
+  if (!target) throw new Error("no clipboard command found (need pbcopy, wl-copy, or xclip)");
+  const [cmd, args] = target;
+  const result = spawnSync(cmd, args, { input: text, encoding: "utf8", timeout: 5000 });
+  if (result.error) throw new Error(`clipboard copy failed: ${result.error.message}`);
+  if (result.status !== 0) {
+    throw new Error(`clipboard copy failed: ${(result.stderr || `exit ${result.status}`).trim()}`);
+  }
+}
+
+// Pure so the argument list can be asserted without posting a notification.
+function notifierArgs(record, env = process.env) {
+  const { title, subtitle, body } = notificationContent(record);
+  const args = ["-title", title, "-subtitle", subtitle, "-message", body, "-group", "fixen"];
+  args.push("-execute", `${shQuote(process.execPath)} ${shQuote(__filename)} --copy`);
+  const icon = env.FIXEN_NOTIFY_ICON;
+  if (icon) args.push("-appIcon", icon);
+  if (boolish(env.FIXEN_NOTIFY_IGNORE_DND)) args.push("-ignoreDnD");
+  return args;
+}
+
 function showDesktopNotification(record) {
   if (boolish(process.env.FIXEN_NOTIFY_DISABLE)) return;
   const { title, subtitle, body } = notificationContent(record);
 
   let result;
-  // terminal-notifier is optional, but it groups by thread — a new correction
-  // replaces the previous banner instead of stacking another card.
+  // terminal-notifier is optional, but it earns its keep: banners group by
+  // thread so a new correction replaces the previous card, and clicking one
+  // copies the fixed sentence.
   if (process.platform === "darwin" && which("terminal-notifier")) {
-    result = spawnSync(
-      "terminal-notifier",
-      ["-title", title, "-subtitle", subtitle, "-message", body, "-group", "fixen"],
-      { encoding: "utf8", timeout: 5000 }
-    );
+    result = spawnSync("terminal-notifier", notifierArgs(record), {
+      encoding: "utf8",
+      timeout: 5000,
+    });
   } else if (process.platform === "darwin") {
     const script = [
       "on run argv",
@@ -1269,6 +1307,7 @@ Usage:
       prompt-submit adapter: validate hook JSON from stdin, queue --notify in a
       detached worker, and exit immediately without delaying the AI agent
   fixen --last                        print the most recent sidecar correction
+  fixen --copy                        copy the corrected sentence to the clipboard
   fixen --ask [options] <question...> ask about the most recent correction
   fixen --clear                       delete the saved sidecar correction
   fixen install [-t <lang>] [-e] [-l <lang>] [-f <file>]...
@@ -1296,6 +1335,7 @@ Options:
       --notify           sidecar-correct the supplied text and notify
       --hook             queue a sidecar job from prompt-submit hook JSON
       --last             show the latest unexpired sidecar correction
+      --copy             copy the latest corrected sentence to the clipboard
       --ask              ask about the latest sidecar correction
       --clear            delete the latest sidecar correction
       --check            (update) only report versions; exit 1 if outdated
@@ -1318,6 +1358,8 @@ Environment:
   FIXEN_CORRECTION_TTL      saved correction lifetime in seconds (default 86400; max 604800)
   FIXEN_SIDECAR_NO_STORE    1/true to notify without retaining a correction
   FIXEN_NOTIFY_DISABLE      1/true to save sidecar results without desktop alerts
+  FIXEN_NOTIFY_ICON         image path shown instead of the notifier's own icon
+  FIXEN_NOTIFY_IGNORE_DND   1/true to show banners even in Do Not Disturb
   FIXEN_REGISTRY            npm registry for update (default: registry.npmjs.org)
   FIXEN_UPDATE_CMD          custom upgrade command; must contain {spec} → fixen-cli@latest
   FIXEN_DEBUG               1 to print stack traces on unexpected errors
@@ -1373,6 +1415,7 @@ function parseArgs(argv) {
       case "--notify": opts.notify = true; break;
       case "--hook": opts.hook = true; break;
       case "--last": opts.last = true; break;
+      case "--copy": opts.copy = true; break;
       case "--ask": opts.ask = true; break;
       case "--clear": opts.clear = true; break;
       case "--check": opts.check = true; break;
@@ -1435,8 +1478,9 @@ async function main() {
   // -e / --no-explain win; only an untouched flag falls through to env, config.
   opts.explain ??= boolish(process.env.FIXEN_EXPLAIN) ?? boolish(cfg.explain) ?? false;
 
-  const modes = [opts.notify, opts.hook, opts.last, opts.ask, opts.clear].filter(Boolean).length;
-  if (modes > 1) fail("use only one of --notify, --hook, --last, --ask, or --clear");
+  const modes = [opts.notify, opts.hook, opts.last, opts.ask, opts.clear, opts.copy]
+    .filter(Boolean).length;
+  if (modes > 1) fail("use only one of --notify, --hook, --last, --copy, --ask, or --clear");
   if (opts.job && !opts.notify) fail("--job is only valid with --notify");
 
   // Administrative subcommands retain the original lone-word dispatch rule,
@@ -1458,6 +1502,14 @@ async function main() {
     const record = loadLastCorrection();
     if (!record) fail("no recent sidecar correction — send an English message first");
     process.stdout.write(formatCorrection(record) + "\n");
+    return;
+  }
+  if (opts.copy) {
+    if (opts.words.length > 0) fail("--copy does not take text");
+    const record = loadLastCorrection();
+    if (!record) fail("no recent sidecar correction — send an English message first");
+    copyToClipboard(record.corrected);
+    process.stdout.write(`${OUT.green("ok")}    copied the corrected sentence\n`);
     return;
   }
   if (opts.hook) {
@@ -1583,6 +1635,8 @@ module.exports = {
   likelyContainsTarget,
   correctionHeadline,
   notificationContent,
+  notifierArgs,
+  shQuote,
   cleanOutput,
   boolish,
   cmpVersions,

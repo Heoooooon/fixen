@@ -718,3 +718,63 @@ test("notificationContent: multiple notes are joined and every field is bounded"
   assert.ok(Array.from(c.subtitle).length <= 100);
   assert.ok(Array.from(c.body).length <= 200);
 });
+
+// ------------------------------------------------------- notifier / clipboard
+
+test("shQuote: single quotes are escaped, not swallowed", () => {
+  assert.equal(fx.shQuote("plain"), "'plain'");
+  assert.equal(fx.shQuote("it's"), `'it'\\''s'`);
+  assert.equal(fx.shQuote("a; rm -rf /"), "'a; rm -rf /'");
+});
+
+test("notifierArgs: click re-invokes fixen instead of shelling out model text", () => {
+  const args = fx.notifierArgs(rec("its me", "it's me; rm -rf ~", ["note"]), {});
+  const execute = args[args.indexOf("-execute") + 1];
+  assert.ok(execute.endsWith("--copy"), execute);
+  assert.ok(!execute.includes("rm -rf ~"));
+  assert.ok(execute.startsWith("'"));
+});
+
+test("notifierArgs: banners group so a new correction replaces the old card", () => {
+  const args = fx.notifierArgs(rec("its me", "it's me"), {});
+  assert.equal(args[args.indexOf("-group") + 1], "fixen");
+  assert.equal(args[args.indexOf("-title") + 1], "its → it's");
+});
+
+test("notifierArgs: icon and DnD override are opt-in", () => {
+  const plain = fx.notifierArgs(rec("its me", "it's me"), {});
+  assert.ok(!plain.includes("-appIcon"));
+  assert.ok(!plain.includes("-ignoreDnD"));
+
+  const custom = fx.notifierArgs(rec("its me", "it's me"), {
+    FIXEN_NOTIFY_ICON: "/tmp/icon.png",
+    FIXEN_NOTIFY_IGNORE_DND: "1",
+  });
+  assert.equal(custom[custom.indexOf("-appIcon") + 1], "/tmp/icon.png");
+  assert.ok(custom.includes("-ignoreDnD"));
+});
+
+test("copy: the corrected sentence lands on the clipboard", { skip: process.platform !== "darwin" }, () => {
+  const home = tmpHome();
+  const cmd = sidecarScript(home, CORRECTION_REPLY);
+  run(["--notify", "-c", cmd, "its a beautiful day"], home, { FIXEN_NOTIFY_DISABLE: "1" });
+
+  const before = spawnSync("pbpaste", { encoding: "utf8" }).stdout;
+  try {
+    const r = run(["--copy"], home);
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /copied/);
+    assert.equal(spawnSync("pbpaste", { encoding: "utf8" }).stdout, "it's a beautiful day");
+  } finally {
+    spawnSync("pbcopy", { input: before });
+  }
+});
+
+test("copy: without a saved correction it fails loudly and takes no text", () => {
+  const home = tmpHome();
+  const missing = run(["--copy"], home);
+  assert.equal(missing.status, 1);
+  assert.match(missing.stderr, /no recent sidecar correction/);
+  assert.match(run(["--copy", "extra text"], home).stderr, /does not take text/);
+  assert.match(run(["--copy", "--last"], home).stderr, /only one of/);
+});

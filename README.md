@@ -127,9 +127,9 @@ fixen install -e -l Korean -f .kiro/steering/fixen.md
 
 Desktop notifications lead with the actual fix — `its → it's` — then the corrected sentence, then the reason. `FIXEN_NOTIFY_DISABLE=1` saves without displaying, `FIXEN_CORRECTION_TTL` changes the record lifetime (maximum seven days), and `FIXEN_SIDECAR_TIMEOUT` changes the worker deadline.
 
-Delivery uses `terminal-notifier` when it is on `PATH` (`brew install terminal-notifier`), falling back to built-in macOS notifications, or `notify-send` on Linux. terminal-notifier is optional but nicer: banners are grouped, so a new correction replaces the previous one instead of stacking another card.
+Delivery uses `terminal-notifier` when it is on `PATH` (`brew install terminal-notifier`), falling back to built-in macOS notifications, or `notify-send` on Linux. terminal-notifier is optional but earns the install: banners are grouped so a new correction replaces the previous card instead of stacking, **clicking one copies the corrected sentence to your clipboard**, `FIXEN_NOTIFY_ICON` swaps in your own image, and `FIXEN_NOTIFY_IGNORE_DND=1` shows banners through Do Not Disturb. `fixen --copy` does the same copy from the terminal.
 
-> **macOS banners are silent-fail.** Banners are attributed to whatever posts them — **terminal-notifier**, or **Script Editor** on the `osascript` fallback — never to fixen itself. If that app is off in **System Settings → Notifications**, or a Focus mode is active, macOS drops the banner and still reports success; fixen cannot detect this. The correction is always saved either way, so `fixen --last` shows what a missing banner would have said.
+> **macOS banners are silent-fail.** Banners are attributed to whatever posts them — **terminal-notifier**, or **Script Editor** on the `osascript` fallback — never to fixen itself. If that app is off in **System Settings → Notifications**, or a Focus mode is active, macOS drops the banner and still reports success; fixen cannot detect this. `FIXEN_NOTIFY_IGNORE_DND=1` covers the Focus case; either way the correction is saved, so `fixen --last` shows what a missing banner would have said.
 
 ## Backends
 

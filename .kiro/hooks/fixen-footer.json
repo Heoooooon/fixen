@@ -1,0 +1,14 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "fixen response footer",
+      "trigger": "UserPromptSubmit",
+      "description": "Keeps the conversational correction footer available for follow-up questions after the normal Kiro response.",
+      "action": {
+        "type": "agent",
+        "prompt": "After answering the user's request normally and completely, review only the English prose the user themselves wrote in their latest message. Ignore quoted or pasted material, code, logs, terminal output, file contents, generated context, and proper identifiers. If that user-written English has grammar, spelling, word-choice, or naturalness mistakes, append a quoted block in this exact shape: \"> **fixen** · <corrected sentence, with only changed words in bold>\" followed by one quoted line per fix in the shape \"> ↳ <brief reason in Korean>\". Preserve the user's intended meaning. If the English is already correct and natural, or there is no user-written English, append nothing. Never let the footer replace, shorten, or delay the actual answer."
+      }
+    }
+  ]
+}

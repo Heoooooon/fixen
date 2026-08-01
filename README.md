@@ -39,13 +39,19 @@ fixen update --check    # just compare versions (exit 1 if outdated) — safe fo
 ## Usage
 
 ```sh
-fixen "your english sentence"     # one-shot
-echo "your sentence" | fixen      # stdin / pipes
-fixen                             # interactive mode (type lines, Ctrl+D to quit)
-fixen -e "sentence"               # also explain what was fixed
-fixen -e -l Korean "sentence"     # explanations in Korean
-fixen -t Japanese "日本語の文"      # correct any language, not just English
+fixen "your english sentence"       # one-shot
+echo "your sentence" | fixen        # stdin / pipes
+fixen                               # interactive mode (type lines, Ctrl+D to quit)
+fixen -e "sentence"                 # also explain what was fixed
+fixen -e -l Korean "sentence"       # explanations in Korean
+fixen -t Japanese "日本語の文"        # correct any language, not just English
+fixen --notify -e "sentence"        # correct in a desktop notification
+fixen --last                        # show the most recent notification correction
+fixen --ask "why was this changed?" # ask about that correction
+fixen --clear                       # delete the saved correction
 ```
+
+Sidecar actions use explicit `--` options, so ordinary text such as `fixen ask me tomorrow` or `fixen notify the team` remains a sentence to correct.
 
 English is just the default. `-t/--target` (or `FIXEN_TARGET`, or `"target"` in the config) switches the language being corrected — `fixen -t French -e -l Korean "..."` corrects French and explains the fixes in Korean.
 
@@ -83,6 +89,47 @@ Details that keep it polite:
 - `fixen uninstall` removes every trace (pointer lines and the rule file); `fixen status` shows where it's active. Re-running `install` is idempotent and upgrades old-style installs in place, and [`fixen update`](#updating) does that for you after every version bump.
 - `install` regenerates the rule from the flags and config it sees, so a bare `fixen install` after `fixen install -t Japanese -e` falls back to defaults — keep `"target"`, `"lang"`, and `"explain"` in `config.json` instead of retyping flags.
 - Applies to new chat sessions.
+
+## Instant sidecar notifications
+
+The footer is useful context for follow-up questions, but it cannot appear until the main agent finishes. The sidecar runs the same learning loop independently at prompt-submit time, so a slow coding task does not delay the correction:
+
+```text
+prompt submitted
+├─ AI agent → normal work → footer when the reply finishes
+└─ fixen hook → detached worker → desktop notification as soon as it is ready
+```
+
+Use the commands directly:
+
+```sh
+fixen --notify -e -l Korean "why this doesn't works?"
+fixen --last
+fixen --ask "왜 work로 고쳤어?"
+fixen --clear
+```
+
+`--notify` filters generated context, code, logs, quotes, URLs, and common secret assignments before invoking the backend. Already-natural writing produces no notification. Only the exact original excerpt selected for correction—not the complete chat prompt—is saved to the private `~/.config/fixen/last-correction.json`. The record expires after 24 hours and each result replaces the previous one. `--last` prints it, `--ask` sends that minimal correction plus your question to the configured backend, and `--clear` deletes it immediately. Set `FIXEN_SIDECAR_NO_STORE=1` for notifications with no retained follow-up context.
+
+For an AI tool with a prompt-submit hook, configure the hook command as:
+
+```sh
+fixen --hook -e -l Korean
+```
+
+The tool passes its event JSON on stdin. `fixen --hook` accepts a documented prompt field or Kiro's `USER_PROMPT`, rejects malformed or over-64-KiB events without blocking the chat, queues a private filtered job, and exits immediately. The detached worker has an 8-second default timeout and no retry, so it never extends the main agent run; values outside 1–60 seconds fall back to 8 seconds. On Kiro, create a **UserPromptSubmit → command** Agent Hook with that command.
+
+Keep the footer rule as a separate agent hook for hybrid mode. That preserves the correction inside the conversation for natural follow-up questions while the notification arrives independently. Existing CLI integrations can still use `fixen install`; for Kiro steering, the generated rule can be targeted explicitly:
+
+```sh
+fixen install -e -l Korean -f .kiro/steering/fixen.md
+```
+
+Desktop notifications lead with the actual fix — `its → it's` — then the corrected sentence, then the reason. `FIXEN_NOTIFY_DISABLE=1` saves without displaying, `FIXEN_CORRECTION_TTL` changes the record lifetime (maximum seven days), and `FIXEN_SIDECAR_TIMEOUT` changes the worker deadline.
+
+Delivery uses `terminal-notifier` when it is on `PATH` (`brew install terminal-notifier`), falling back to built-in macOS notifications, or `notify-send` on Linux. terminal-notifier is optional but earns the install: banners are grouped so a new correction replaces the previous card instead of stacking, **clicking one copies the corrected sentence to your clipboard**, `FIXEN_NOTIFY_ICON` swaps in your own image, and `FIXEN_NOTIFY_IGNORE_DND=1` shows banners through Do Not Disturb. `fixen --copy` does the same copy from the terminal.
+
+> **macOS banners are silent-fail.** Banners are attributed to whatever posts them — **terminal-notifier**, or **Script Editor** on the `osascript` fallback — never to fixen itself. If that app is off in **System Settings → Notifications**, or a Focus mode is active, macOS drops the banner and still reports success; fixen cannot detect this. `FIXEN_NOTIFY_IGNORE_DND=1` covers the Focus case; either way the correction is saved, so `fixen --last` shows what a missing banner would have said.
 
 ## Backends
 
@@ -123,11 +170,11 @@ Defaults live in `~/.config/fixen/config.json`:
 { "backend": "claude", "model": null, "command": null, "lang": "Korean", "target": "English", "explain": true }
 ```
 
-Environment variables `FIXEN_BACKEND`, `FIXEN_BACKEND_CMD`, `FIXEN_TARGET`, `FIXEN_LANG`, `FIXEN_EXPLAIN`, `FIXEN_MODEL`, `FIXEN_API_URL`, `FIXEN_API_KEY` override the config; CLI flags override everything (`--no-explain` turns off a config-enabled `explain` for one run). A failed backend attempt is retried once; tune with `FIXEN_RETRIES` (0 disables retries).
+Environment variables `FIXEN_BACKEND`, `FIXEN_BACKEND_CMD`, `FIXEN_TARGET`, `FIXEN_LANG`, `FIXEN_EXPLAIN`, `FIXEN_MODEL`, `FIXEN_API_URL`, `FIXEN_API_KEY` override the config; CLI flags override everything (`--no-explain` turns off a config-enabled `explain` for one run). A failed backend attempt is retried once; tune with `FIXEN_RETRIES` (0 disables retries). `FIXEN_BACKEND_TIMEOUT` bounds CLI/custom backends. Detached notification workers set both backend and API deadlines from a validated `FIXEN_SIDECAR_TIMEOUT` (8 seconds by default), and terminate the full POSIX process group when that deadline expires.
 
 ## Why fixen
 
-- **Zero dependencies.** One file, ~29 KB unpacked. `npm install` finishes before you blink.
+- **Zero dependencies.** One file, ~55 KB unpacked. `npm install` finishes before you blink.
 - **Bring your own model.** Your existing CLI subscription or a local `ollama` model — fixen doesn't care and never sees your text itself.
 - **Any language.** English by default; `-t` corrects Japanese, French, German, anything.
 - **Reversible.** `fixen uninstall` puts every touched file back exactly as it was.

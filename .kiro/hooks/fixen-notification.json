@@ -1,0 +1,15 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "fixen sidecar notification",
+      "trigger": "UserPromptSubmit",
+      "description": "Queues the latest user prompt for an independent English correction and macOS notification without waiting for the main agent run.",
+      "action": {
+        "type": "command",
+        "command": "node ./bin/fixen.js --hook -e -l Korean",
+        "timeout": 5
+      }
+    }
+  ]
+}

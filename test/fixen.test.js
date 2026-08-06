@@ -922,3 +922,130 @@ test("history: appendHistory caps the file at 500 newest entries", () => {
   // loadHistory returns newest first; the oldest 5 entries were dropped.
   assert.equal(r.stdout.trim(), "500 good 504 good 5");
 });
+
+// ------------------------------------------------------------------- gui
+
+function seedHistory(home, records) {
+  const dir = CONFIG(home);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(
+    HISTORY_FILE(home),
+    records.map((r) => JSON.stringify(r)).join("\n") + "\n"
+  );
+}
+
+function historyRecord(i, extra = {}) {
+  return {
+    id: `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`,
+    createdAt: new Date(Date.now() - i * 60_000).toISOString(),
+    target: "English",
+    explanationLanguage: "Korean",
+    original: `its bad ${i}`,
+    corrected: `it's good ${i}`,
+    notes: [`note ${i}`],
+    ...extra,
+  };
+}
+
+// Starts `fixen --gui` in a child and resolves with its base URL + a killer.
+function startGui(home, args = [], extraEnv = {}) {
+  const { spawn } = require("node:child_process");
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [BIN, "--gui", "--port", "0", ...args], {
+      env: {
+        ...process.env,
+        HOME: home,
+        XDG_CONFIG_HOME: path.join(home, ".config"),
+        NO_COLOR: "1",
+        FIXEN_GUI_NO_OPEN: "1",
+        ...extraEnv,
+      },
+    });
+    let out = "";
+    let settled = false;
+    const finish = (fn, v) => { if (!settled) { settled = true; fn(v); } };
+    child.stdout.on("data", (d) => {
+      out += d;
+      const m = out.match(/http:\/\/127\.0\.0\.1:\d+/);
+      if (m) finish(resolve, { url: m[0], kill: () => child.kill("SIGTERM"), child });
+    });
+    child.on("close", () =>
+      finish(reject, new Error(`gui exited before printing a URL:\n${out}`)));
+    setTimeout(() => finish(reject, new Error(`gui never printed a URL:\n${out}`)), 5000).unref();
+  });
+}
+
+test("gui: /api/state serves history newest first and / serves the page", async () => {
+  const home = tmpHome();
+  seedHistory(home, [historyRecord(2), historyRecord(1)]);
+  const gui = await startGui(home);
+  try {
+    const state = await (await fetch(`${gui.url}/api/state`)).json();
+    assert.equal(state.history.length, 2);
+    assert.equal(state.history[0].corrected, "it's good 1");
+    assert.equal(state.target, "English");
+    assert.ok(state.version);
+
+    const page = await fetch(gui.url);
+    assert.equal(page.status, 200);
+    assert.match(page.headers.get("content-type"), /text\/html/);
+    assert.match(await page.text(), /fixen/i);
+
+    const missing = await fetch(`${gui.url}/nope`);
+    assert.equal(missing.status, 404);
+  } finally {
+    gui.kill();
+  }
+});
+
+test("gui: delete removes one entry and clear empties the history", async () => {
+  const home = tmpHome();
+  const recs = [historyRecord(3), historyRecord(2), historyRecord(1)];
+  seedHistory(home, recs);
+  const gui = await startGui(home);
+  try {
+    const del = await fetch(`${gui.url}/api/delete`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id: recs[1].id }),
+    });
+    assert.equal(del.status, 200);
+    let state = await (await fetch(`${gui.url}/api/state`)).json();
+    assert.equal(state.history.length, 2);
+    assert.ok(!state.history.some((r) => r.id === recs[1].id));
+
+    const clear = await fetch(`${gui.url}/api/clear`, { method: "POST" });
+    assert.equal(clear.status, 200);
+    state = await (await fetch(`${gui.url}/api/state`)).json();
+    assert.equal(state.history.length, 0);
+  } finally {
+    gui.kill();
+  }
+});
+
+test("gui: /api/ask answers through the configured backend", async () => {
+  const home = tmpHome();
+  const recs = [historyRecord(1)];
+  seedHistory(home, recs);
+  const cmd = sidecarScript(home, "because it's is the contraction", "answer.sh");
+  const gui = await startGui(home, ["-c", cmd]);
+  try {
+    const res = await fetch(`${gui.url}/api/ask`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id: recs[0].id, question: "why?" }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.match(body.answer, /contraction/);
+
+    const bad = await fetch(`${gui.url}/api/ask`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id: "missing", question: "why?" }),
+    });
+    assert.equal(bad.status, 404);
+  } finally {
+    gui.kill();
+  }
+});

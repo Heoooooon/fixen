@@ -1,0 +1,1032 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>fixen — corrections</title>
+<style>
+/* ==========================================================================
+   fixen design system
+   Tokens are lifted from assets/readme/hero.svg — the project's existing
+   visual identity: warm proofreader's paper, ink text, a red correction mark.
+   Nothing here is invented ad hoc; every component below consumes a token.
+   ========================================================================== */
+:root {
+  /* --- palette: paper & ink ------------------------------------------- */
+  --paper:        #fbf8f1;   /* hero background */
+  --surface:      #ffffff;
+  --surface-sunk: #f4efe4;
+  --ink:          #191714;   /* hero wordmark */
+  --ink-2:        #2b2620;   /* hero body copy */
+  --muted:        #6b6255;   /* hero secondary copy */
+  --dim:          #8a8072;   /* hero label copy */
+  --rule:         #e0d8c8;   /* hero hairline */
+  --rule-soft:    #ece5d7;
+
+  /* --- palette: semantic ---------------------------------------------- */
+  --accent:       #e0603f;   /* hero "fixen:" coral — the one accent hue */
+  --accent-deep:  #c0392b;   /* hero proofreader underline */
+  --accent-wash:  #fdeee9;
+  --accent-ring:  rgba(224, 96, 63, .30);
+  --removed:      #b23a2c;
+  --removed-wash: #f9e6e2;
+  --added:        #2f7d4f;
+  --added-wash:   #e6f2e9;
+
+  /* --- typography: scale ---------------------------------------------- */
+  --font: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Segoe UI",
+          "Noto Sans KR", "Malgun Gothic", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --text-xs:   11px;
+  --text-sm:   13px;
+  --text-base: 15px;   /* required base */
+  --text-md:   16px;
+  --text-lg:   19px;
+  --text-xl:   26px;
+  --leading-tight: 1.3;
+  --leading-body:  1.62;
+  --tracking-label: .09em;
+
+  /* --- spacing: 4px grid ---------------------------------------------- */
+  --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
+  --space-5: 20px; --space-6: 24px; --space-8: 32px; --space-10: 40px;
+  --space-12: 48px; --space-16: 64px;
+
+  /* --- radii ----------------------------------------------------------- */
+  --radius-sm: 8px; --radius-md: 12px; --radius-lg: 16px; --radius-pill: 999px;
+
+  /* --- elevation ------------------------------------------------------- */
+  --shadow-1: 0 1px 2px rgba(25, 23, 20, .05), 0 1px 3px rgba(25, 23, 20, .04);
+  --shadow-2: 0 2px 4px rgba(25, 23, 20, .05), 0 8px 20px -6px rgba(25, 23, 20, .10);
+  --shadow-3: 0 10px 32px -10px rgba(25, 23, 20, .22);
+
+  /* --- motion ---------------------------------------------------------- */
+  --ease: cubic-bezier(.2, .7, .3, 1);
+  --dur-fast: .14s; --dur-mid: .24s; --dur-slow: .42s;
+
+  /* --- layout ---------------------------------------------------------- */
+  --measure: 760px;
+  --rail: 92px;  /* timeline gutter: timestamp column + spine */
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper:        #14120f;
+    --surface:      #1c1a16;
+    --surface-sunk: #221f1a;
+    --ink:          #f4f1ea;   /* hero terminal foreground */
+    --ink-2:        #e4dfd4;
+    --muted:        #b9b0a1;   /* hero terminal secondary */
+    --dim:          #8a8072;
+    --rule:         #332d26;   /* hero terminal rule */
+    --rule-soft:    #2a2620;
+    --accent:       #f0785a;
+    --accent-deep:  #e0603f;
+    --accent-wash:  #2e1d18;
+    --accent-ring:  rgba(240, 120, 90, .34);
+    --removed:      #e58a78;
+    --removed-wash: #331f1b;
+    --added:        #8fd694;   /* hero terminal green */
+    --added-wash:   #1a2a1e;
+    --shadow-1: 0 1px 2px rgba(0,0,0,.34);
+    --shadow-2: 0 2px 6px rgba(0,0,0,.34), 0 10px 24px -8px rgba(0,0,0,.46);
+    --shadow-3: 0 12px 36px -10px rgba(0,0,0,.62);
+  }
+}
+
+/* ==========================================================================
+   base
+   ========================================================================== */
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  font-family: var(--font);
+  font-size: var(--text-base);
+  line-height: var(--leading-body);
+  color: var(--ink-2);
+  background: var(--paper);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* faint paper tooth — flat wash, no gradient meshes */
+  background-image:
+    radial-gradient(circle at 18% -8%, var(--accent-wash) 0%, transparent 46%);
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}
+button, input, textarea { font: inherit; color: inherit; }
+button { background: none; border: 0; margin: 0; padding: 0; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius-sm); }
+::selection { background: var(--accent-ring); }
+
+.shell { max-width: var(--measure); margin: 0 auto; padding: 0 var(--space-6) var(--space-16); }
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* ==========================================================================
+   offline banner
+   ========================================================================== */
+.banner {
+  position: sticky; top: 0; z-index: 30;
+  display: flex; align-items: center; gap: var(--space-2);
+  padding: var(--space-2) var(--space-6);
+  background: var(--accent-deep);
+  color: #fff;
+  font-size: var(--text-sm);
+  font-weight: 560;
+  letter-spacing: .01em;
+  box-shadow: var(--shadow-2);
+  transform: translateY(-100%);
+  transition: transform var(--dur-mid) var(--ease);
+}
+.banner[data-open="true"] { transform: translateY(0); }
+.banner svg { flex: none; }
+.banner .banner-hint { margin-left: auto; opacity: .74; font-weight: 420; font-family: var(--font-mono); font-size: var(--text-xs); }
+
+/* ==========================================================================
+   header
+   ========================================================================== */
+.masthead {
+  display: flex; align-items: flex-end; gap: var(--space-4);
+  padding: var(--space-12) 0 var(--space-5);
+  flex-wrap: wrap;
+}
+.brand { display: flex; align-items: center; gap: var(--space-3); }
+.mark {
+  width: 38px; height: 38px; flex: none;
+  color: var(--accent);
+}
+.wordmark {
+  position: relative;
+  font-size: var(--text-xl);
+  font-weight: 700;
+  letter-spacing: -.028em;
+  color: var(--ink);
+  line-height: 1.05;
+}
+/* proofreader's underline + insertion caret, straight from the hero art */
+.wordmark::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: -5px; height: 2px;
+  background: var(--accent-deep); border-radius: 2px;
+  transform-origin: left; transform: scaleX(0);
+  animation: rule-in var(--dur-slow) var(--ease) .12s forwards;
+}
+@keyframes rule-in { to { transform: scaleX(1); } }
+.tagline {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-sm); color: var(--dim); letter-spacing: .005em;
+}
+.masthead-meta { margin-left: auto; display: flex; align-items: center; gap: var(--space-2); }
+
+.badge {
+  display: inline-flex; align-items: center; gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.badge--accent { color: var(--accent-deep); border-color: var(--accent-ring); background: var(--accent-wash); }
+.badge .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .72; }
+.badge--accent .dot { animation: pulse 2.6s var(--ease) infinite; }
+@keyframes pulse { 0%,100% { opacity: .34; } 50% { opacity: 1; } }
+
+.btn-ghost {
+  display: inline-flex; align-items: center; gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: var(--text-sm); font-weight: 560;
+  box-shadow: var(--shadow-1);
+  transition: color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease),
+              transform var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+.btn-ghost:hover { color: var(--accent-deep); border-color: var(--accent-ring); transform: translateY(-1px); }
+.btn-ghost:active { transform: translateY(0); }
+.btn-ghost[hidden] { display: none; }
+
+.masthead-rule { height: 1px; background: var(--rule); border: 0; margin: 0 0 var(--space-8); }
+
+/* ==========================================================================
+   timeline
+   ========================================================================== */
+.timeline { position: relative; display: flex; flex-direction: column; gap: var(--space-5); }
+/* the spine */
+.timeline[data-populated="true"]::before {
+  content: ""; position: absolute; left: calc(var(--rail) - 21px); top: var(--space-3); bottom: var(--space-3);
+  width: 1px; background: linear-gradient(var(--rule), var(--rule) 78%, transparent);
+}
+
+.entry { position: relative; padding-left: var(--rail); }
+.entry-when {
+  position: absolute; left: 0; top: var(--space-5); width: calc(var(--rail) - 34px);
+  text-align: right;
+  font-size: var(--text-xs); font-variant-numeric: tabular-nums;
+  color: var(--dim); letter-spacing: .02em; white-space: nowrap;
+}
+.entry-node {
+  position: absolute; left: calc(var(--rail) - 25px); top: calc(var(--space-5) + 5px);
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--surface); border: 2px solid var(--rule);
+}
+.entry:first-child .entry-node { border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-wash); }
+
+.entry--enter { animation: entry-in var(--dur-slow) var(--ease) both; }
+@keyframes entry-in {
+  from { opacity: 0; transform: translateY(-10px) scale(.985); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* --- card ------------------------------------------------------------- */
+.card {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5) var(--space-5) var(--space-4);
+  box-shadow: var(--shadow-1);
+  transition: box-shadow var(--dur-mid) var(--ease), transform var(--dur-mid) var(--ease),
+              border-color var(--dur-mid) var(--ease);
+}
+.card:hover { transform: translateY(-2px); box-shadow: var(--shadow-2); border-color: var(--rule-soft); }
+.card:hover .card-actions { opacity: 1; }
+
+.line { display: flex; gap: var(--space-3); align-items: baseline; }
+.line + .line { margin-top: var(--space-2); }
+.line-tag {
+  flex: none; width: 30px; padding-top: 1px;
+  font-size: var(--text-xs); font-weight: 700; letter-spacing: var(--tracking-label);
+  text-transform: uppercase; color: var(--dim);
+  font-family: var(--font-mono);
+}
+.line-body { flex: 1 1 auto; min-width: 0; word-break: break-word; }
+.line--from .line-body { color: var(--muted); font-size: var(--text-base); }
+.line--to   .line-body { color: var(--ink); font-size: var(--text-md); font-weight: 560; letter-spacing: -.005em; }
+.line--to   .line-tag  { color: var(--accent); }
+
+/* --- word diff --------------------------------------------------------- */
+.del {
+  color: var(--removed); background: var(--removed-wash);
+  text-decoration: line-through; text-decoration-thickness: 1.5px;
+  text-decoration-color: color-mix(in srgb, var(--removed) 66%, transparent);
+  border-radius: 4px; padding: 0 3px; margin: 0 -1px;
+}
+.ins {
+  color: var(--added); background: var(--added-wash); font-weight: 680;
+  border-radius: 4px; padding: 0 3px; margin: 0 -1px;
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--added) 34%, transparent);
+}
+.clean {
+  display: inline-flex; align-items: center; gap: var(--space-1);
+  font-size: var(--text-xs); color: var(--added); font-weight: 600;
+  letter-spacing: .01em;
+}
+
+/* --- notes ------------------------------------------------------------- */
+.notes {
+  margin: var(--space-4) 0 0; padding: var(--space-3) 0 0;
+  border-top: 1px dashed var(--rule);
+  list-style: none;
+}
+.notes li {
+  position: relative; padding-left: var(--space-4);
+  font-size: var(--text-sm); color: var(--muted); line-height: 1.55;
+}
+.notes li + li { margin-top: var(--space-1); }
+.notes li::before {
+  content: ""; position: absolute; left: 3px; top: .62em;
+  width: 4px; height: 4px; border-radius: 50%; background: var(--rule);
+}
+
+/* --- actions ----------------------------------------------------------- */
+.card-foot {
+  display: flex; align-items: center; gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+.card-lang { font-size: var(--text-xs); color: var(--dim); letter-spacing: .02em; }
+.card-actions {
+  margin-left: auto; display: flex; align-items: center; gap: var(--space-1);
+  opacity: .55; transition: opacity var(--dur-mid) var(--ease);
+}
+@media (hover: none) { .card-actions { opacity: 1; } }
+
+.icon-btn {
+  position: relative;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; border-radius: var(--radius-sm);
+  color: var(--muted);
+  transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease),
+              transform var(--dur-fast) var(--ease);
+}
+.icon-btn:hover { background: var(--surface-sunk); color: var(--ink); transform: translateY(-1px); }
+.icon-btn[data-variant="danger"]:hover { color: var(--accent-deep); background: var(--accent-wash); }
+.icon-btn[aria-expanded="true"] { color: var(--accent-deep); background: var(--accent-wash); }
+.icon-btn svg { width: 18px; height: 18px; }
+.icon-btn .icon-done { display: none; }
+.icon-btn[data-flash="true"] { color: var(--added); background: var(--added-wash); }
+.icon-btn[data-flash="true"] .icon-idle { display: none; }
+.icon-btn[data-flash="true"] .icon-done { display: block; animation: pop var(--dur-mid) var(--ease); }
+@keyframes pop { from { transform: scale(.6); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* tooltip */
+.icon-btn::after {
+  content: attr(data-tip);
+  position: absolute; bottom: calc(100% + 6px); left: 50%;
+  transform: translateX(-50%) translateY(3px);
+  padding: 3px var(--space-2);
+  background: var(--ink); color: var(--paper);
+  font-size: var(--text-xs); font-weight: 500; letter-spacing: .01em;
+  border-radius: 6px; white-space: nowrap; pointer-events: none;
+  opacity: 0; transition: opacity var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
+}
+.icon-btn:hover::after, .icon-btn:focus-visible::after { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ==========================================================================
+   ask thread
+   ========================================================================== */
+.ask { display: none; margin-top: var(--space-4); padding-top: var(--space-4); border-top: 1px solid var(--rule-soft); }
+.ask[data-open="true"] { display: block; animation: entry-in var(--dur-mid) var(--ease); }
+
+.ask-form { display: flex; gap: var(--space-2); }
+.ask-input {
+  flex: 1 1 auto; min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunk);
+  font-size: var(--text-sm);
+  transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+}
+.ask-input::placeholder { color: var(--dim); }
+.ask-input:focus { outline: 0; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); background: var(--surface); }
+.ask-send {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; border-radius: var(--radius-md);
+  background: var(--accent); color: #fff;
+  box-shadow: var(--shadow-1);
+  transition: filter var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
+}
+.ask-send:hover { filter: brightness(1.06); transform: translateY(-1px); }
+.ask-send:disabled { opacity: .5; cursor: default; transform: none; filter: none; }
+.ask-send svg { width: 17px; height: 17px; }
+
+.thread { margin-top: var(--space-3); display: flex; flex-direction: column; gap: var(--space-2); }
+.bubble {
+  max-width: 88%; padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm); line-height: 1.58;
+  border-radius: var(--radius-md);
+  animation: entry-in var(--dur-mid) var(--ease);
+  white-space: pre-wrap; word-break: break-word;
+}
+.bubble--q {
+  align-self: flex-end; background: var(--accent); color: #fff;
+  border-bottom-right-radius: var(--space-1); font-weight: 500;
+}
+.bubble--a {
+  align-self: flex-start; background: var(--surface-sunk); color: var(--ink-2);
+  border: 1px solid var(--rule-soft); border-bottom-left-radius: var(--space-1);
+}
+.bubble--err { align-self: flex-start; background: var(--removed-wash); color: var(--removed); border-bottom-left-radius: var(--space-1); }
+
+.spinner {
+  display: inline-block; width: 13px; height: 13px;
+  border: 2px solid var(--rule); border-top-color: var(--accent);
+  border-radius: 50%; animation: spin .7s linear infinite;
+  vertical-align: -2px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.thinking { display: flex; align-items: center; gap: var(--space-2); color: var(--dim); font-size: var(--text-sm); }
+
+/* ==========================================================================
+   empty state
+   ========================================================================== */
+.empty { text-align: center; padding: var(--space-16) var(--space-6); }
+.empty svg { width: 168px; height: 132px; color: var(--accent); }
+.empty h2 {
+  margin: var(--space-6) 0 var(--space-2);
+  font-size: var(--text-lg); font-weight: 640; color: var(--ink); letter-spacing: -.012em;
+  line-height: var(--leading-tight);
+}
+.empty p { margin: 0 auto; max-width: 38ch; color: var(--muted); font-size: var(--text-sm); }
+.empty code {
+  font-family: var(--font-mono); font-size: var(--text-xs);
+  background: var(--surface-sunk); border: 1px solid var(--rule);
+  padding: 2px 6px; border-radius: 6px; color: var(--ink-2);
+}
+
+.footnote {
+  margin-top: var(--space-12); padding-top: var(--space-5);
+  border-top: 1px solid var(--rule);
+  display: flex; gap: var(--space-3); align-items: center;
+  font-size: var(--text-xs); color: var(--dim); font-family: var(--font-mono);
+}
+.footnote .sync { margin-left: auto; display: inline-flex; align-items: center; gap: var(--space-2); }
+.footnote .sync .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--added); }
+.footnote[data-offline="true"] .sync .dot { background: var(--removed); }
+
+@media (max-width: 620px) {
+  :root { --rail: 0px; }
+  .shell { padding: 0 var(--space-4) var(--space-12); }
+  .masthead { padding-top: var(--space-8); }
+  .masthead-meta { margin-left: 0; width: 100%; }
+  .timeline[data-populated="true"]::before, .entry-node { display: none; }
+  .entry-when { position: static; width: auto; text-align: left; margin-bottom: var(--space-2); display: block; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+}
+</style>
+</head>
+<body>
+
+<div class="banner" id="banner" role="status" aria-live="polite">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M12 9v4"/><path d="M12 17h.01"/>
+    <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+  </svg>
+  <span>fixen server not running</span>
+  <span class="banner-hint">retrying every 3s · run <b>fixen gui</b></span>
+</div>
+
+<div class="shell">
+  <header class="masthead">
+    <div class="brand">
+      <!-- mark: a proofreader's caret striking through a line of text -->
+      <svg class="mark" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <rect x="1" y="1" width="22" height="22" rx="6.5" stroke="currentColor" stroke-width="1.5" opacity=".28"/>
+        <path d="M6 9.5h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" opacity=".38"/>
+        <path d="M6 14.5h7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" opacity=".38"/>
+        <path d="M6 14.5h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M13.6 14.5 16 11.4l2.4 3.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <div>
+        <div class="wordmark">fixen</div>
+        <p class="tagline">Everything you typed, quietly corrected.</p>
+      </div>
+    </div>
+    <div class="masthead-meta">
+      <span class="badge badge--accent" id="target-badge"><span class="dot"></span><span id="target-text">English</span></span>
+      <span class="badge" id="count-badge">— entries</span>
+      <button class="btn-ghost" id="clear-all" type="button" hidden>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/>
+          <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+        </svg>
+        Clear all
+      </button>
+    </div>
+  </header>
+  <hr class="masthead-rule">
+
+  <main id="timeline" class="timeline" aria-live="polite"></main>
+
+  <footer class="footnote" id="footnote">
+    <span id="version">fixen</span>
+    <span class="sync"><span class="dot"></span><span id="sync-text">connecting…</span></span>
+  </footer>
+</div>
+
+<template id="tpl-empty">
+  <div class="empty">
+    <!-- a sheet of paper with a correction mark and a resting pen -->
+    <svg viewBox="0 0 168 132" fill="none" aria-hidden="true">
+      <rect x="34" y="12" width="86" height="106" rx="9" fill="var(--surface)" stroke="var(--rule)" stroke-width="1.6"/>
+      <rect x="42" y="6" width="86" height="106" rx="9" fill="var(--surface)" stroke="var(--rule)" stroke-width="1.6"/>
+      <path d="M56 32h58M56 46h58M56 60h40" stroke="var(--rule)" stroke-width="3" stroke-linecap="round"/>
+      <path d="M56 74h34" stroke="var(--rule-soft)" stroke-width="3" stroke-linecap="round"/>
+      <path d="M56 62.5h40" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+      <path d="M84 62.5 90 54l6 8.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="112" cy="92" r="15" fill="var(--surface)" stroke="var(--rule)" stroke-width="1.6"/>
+      <path d="M106 92.5l4 4 8-9" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M20 104c6-3 10-8 12-14" stroke="var(--rule)" stroke-width="2" stroke-linecap="round"/>
+    </svg>
+    <h2>No corrections yet</h2>
+    <p>Keep chatting — fixen is listening. Every reply from your AI CLI ends with a fix, and it lands here. Try <code>fixen "your sentence"</code>.</p>
+  </div>
+</template>
+
+<script>
+"use strict";
+(function () {
+  /* ======================================================================
+     word diff — ported from bin/fixen.js (wordTokens + diffRuns) so the GUI
+     highlights exactly what the CLI's notification headline reports.
+     ====================================================================== */
+  var DIFF_TOKEN_LIMIT = 200;
+
+  function wordTokens(text) {
+    return String(text == null ? "" : text).match(/\S+/g) || [];
+  }
+
+  // Classic LCS backtrack; consecutive edits merge into one run so a rewritten
+  // phrase reads as a single fragment rather than word-by-word noise.
+  function diffRuns(before, after) {
+    if (before.length > DIFF_TOKEN_LIMIT || after.length > DIFF_TOKEN_LIMIT) {
+      return before.join(" ") === after.join(" ") ? [] : [{ before: before, after: after }];
+    }
+    var n = before.length, m = after.length, i, j;
+    var lcs = [];
+    for (i = 0; i <= n; i++) lcs.push(new Uint16Array(m + 1));
+    for (i = n - 1; i >= 0; i--) {
+      for (j = m - 1; j >= 0; j--) {
+        lcs[i][j] = before[i] === after[j]
+          ? lcs[i + 1][j + 1] + 1
+          : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
+      }
+    }
+    var runs = [], run = null;
+    function open() { if (!run) run = { before: [], after: [] }; return run; }
+    function close() {
+      if (run && (run.before.length || run.after.length)) runs.push(run);
+      run = null;
+    }
+    i = 0; j = 0;
+    while (i < n && j < m) {
+      if (before[i] === after[j]) { close(); i++; j++; }
+      else if (lcs[i + 1][j] >= lcs[i][j + 1]) { open().before.push(before[i++]); }
+      else { open().after.push(after[j++]); }
+    }
+    while (i < n) open().before.push(before[i++]);
+    while (j < m) open().after.push(after[j++]);
+    close();
+    return runs;
+  }
+
+  // Emits {text, kind} segments for one side of the diff, walking the runs in
+  // order. Runs are non-overlapping and sorted, so the tokens between the end
+  // of one run and the start of the next are exactly the matched ("same") ones.
+  // kind: "same" | "del" | "ins".
+  function diffSegments(before, after, side) {
+    var runs = diffRuns(before, after);
+    var mine = side === "before" ? before : after;
+    var key = side === "before" ? "before" : "after";
+    var kind = side === "before" ? "del" : "ins";
+    var segs = [];
+    var cursor = 0;   // index into `mine` of the next unconsumed token
+
+    function push(k, tokens) {
+      if (tokens.length) segs.push({ kind: k, text: tokens.join(" ") });
+    }
+
+    // Replay the LCS walk to learn where each run starts on this side: matched
+    // pairs advance both streams, a run consumes run.before / run.after.
+    var bi = 0, ai = 0;
+    for (var r = 0; r < runs.length; r++) {
+      var run = runs[r];
+      // Matched tokens sit between the previous run and this one. Advance until
+      // the streams diverge — that divergence point is where this run begins.
+      while (bi < before.length && ai < after.length && before[bi] === after[ai]) { bi++; ai++; }
+      var runStart = side === "before" ? bi : ai;
+      push("same", mine.slice(cursor, runStart));
+      push(kind, run[key]);
+      bi += run.before.length;
+      ai += run.after.length;
+      cursor = runStart + run[key].length;
+    }
+    push("same", mine.slice(cursor));
+    return segs;
+  }
+
+  function hasChanges(before, after) { return diffRuns(before, after).length > 0; }
+
+  /* ======================================================================
+     dom helpers
+     ====================================================================== */
+  var SVG_NS = "http://www.w3.org/2000/svg";
+
+  function el(tag, cls, text) {
+    var node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text != null) node.textContent = text;
+    return node;
+  }
+
+  function icon(paths, size) {
+    var svg = document.createElementNS(SVG_NS, "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("width", size || 24);
+    svg.setAttribute("height", size || 24);
+    svg.setAttribute("fill", "none");
+    svg.setAttribute("stroke", "currentColor");
+    svg.setAttribute("stroke-width", "2");
+    svg.setAttribute("stroke-linecap", "round");
+    svg.setAttribute("stroke-linejoin", "round");
+    svg.setAttribute("aria-hidden", "true");
+    for (var i = 0; i < paths.length; i++) {
+      var p = document.createElementNS(SVG_NS, "path");
+      p.setAttribute("d", paths[i]);
+      svg.appendChild(p);
+    }
+    return svg;
+  }
+
+  // hand-written feather/lucide-style 24x24 stroke glyphs
+  var ICONS = {
+    copy:  ["M9 9m0 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-8a2 2 0 0 1-2-2z",
+            "M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"],
+    check: ["M20 6 9 17l-5-5"],
+    ask:   ["M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z",
+            "M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3", "M12 17h.01"],
+    trash: ["M3 6h18", "M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2",
+            "M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"],
+    send:  ["M22 2 11 13", "M22 2l-7 20-4-9-9-4z"]
+  };
+
+  function iconButton(name, tip, variant) {
+    var b = el("button", "icon-btn");
+    b.type = "button";
+    b.setAttribute("data-tip", tip);
+    b.setAttribute("aria-label", tip);
+    if (variant) b.setAttribute("data-variant", variant);
+    var idle = icon(ICONS[name], 18);
+    idle.classList.add("icon-idle");
+    b.appendChild(idle);
+    return b;
+  }
+
+  function relativeTime(iso) {
+    var t = Date.parse(iso);
+    if (!isFinite(t)) return "";
+    var s = Math.max(0, Math.floor((Date.now() - t) / 1000));
+    if (s < 10) return "just now";
+    if (s < 60) return s + "s ago";
+    var m = Math.floor(s / 60);
+    if (m < 60) return m + "m ago";
+    var h = Math.floor(m / 60);
+    if (h < 24) return h + "h ago";
+    var d = Math.floor(h / 24);
+    if (d < 7) return d + "d ago";
+    return new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }
+
+  function absoluteTime(iso) {
+    var t = Date.parse(iso);
+    return isFinite(t) ? new Date(t).toLocaleString() : "";
+  }
+
+  /* ======================================================================
+     api
+     ====================================================================== */
+  function post(path, body) {
+    return fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body || {})
+    }).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (data) {
+        if (!res.ok || (data && data.error)) {
+          throw new Error((data && data.error) || ("request failed (" + res.status + ")"));
+        }
+        return data;
+      });
+    });
+  }
+
+  /* ======================================================================
+     state
+     ====================================================================== */
+  var timeline = document.getElementById("timeline");
+  var banner = document.getElementById("banner");
+  var footnote = document.getElementById("footnote");
+  var syncText = document.getElementById("sync-text");
+  var countBadge = document.getElementById("count-badge");
+  var targetText = document.getElementById("target-text");
+  var versionEl = document.getElementById("version");
+  var clearBtn = document.getElementById("clear-all");
+  var emptyTpl = document.getElementById("tpl-empty");
+
+  var lastPayload = null;     // last raw JSON string from /api/state
+  var seenIds = Object.create(null);
+  var threads = Object.create(null);   // id -> [{role, text}]
+  var openAsk = Object.create(null);   // id -> bool
+  var draft = Object.create(null);     // id -> in-flight question text
+  var busy = Object.create(null);      // id -> bool (ask pending)
+  var firstRender = true;
+
+  function setOffline(off) {
+    banner.setAttribute("data-open", off ? "true" : "false");
+    footnote.setAttribute("data-offline", off ? "true" : "false");
+    syncText.textContent = off ? "disconnected" : "live · every 3s";
+  }
+
+  /* ======================================================================
+     rendering
+     ====================================================================== */
+  function renderDiffLine(container, before, after, side) {
+    var segs = diffSegments(before, after, side);
+    if (!segs.length) { container.textContent = ""; return; }
+    for (var i = 0; i < segs.length; i++) {
+      var seg = segs[i];
+      if (i > 0) container.appendChild(document.createTextNode(" "));
+      if (seg.kind === "same") {
+        container.appendChild(document.createTextNode(seg.text));
+      } else {
+        container.appendChild(el("span", seg.kind === "del" ? "del" : "ins", seg.text));
+      }
+    }
+  }
+
+  function buildCard(rec) {
+    var before = wordTokens(rec.original);
+    var after = wordTokens(rec.corrected);
+    var changed = hasChanges(before, after);
+
+    var card = el("div", "card");
+
+    if (changed) {
+      var from = el("div", "line line--from");
+      from.appendChild(el("span", "line-tag", "was"));
+      var fromBody = el("div", "line-body");
+      renderDiffLine(fromBody, before, after, "before");
+      from.appendChild(fromBody);
+      card.appendChild(from);
+    }
+
+    var to = el("div", "line line--to");
+    to.appendChild(el("span", "line-tag", changed ? "now" : "ok"));
+    var toBody = el("div", "line-body");
+    if (changed) {
+      renderDiffLine(toBody, before, after, "after");
+    } else {
+      toBody.textContent = rec.corrected || rec.original || "";
+    }
+    to.appendChild(toBody);
+    card.appendChild(to);
+
+    if (!changed) {
+      var clean = el("div", "line");
+      clean.appendChild(el("span", "line-tag", ""));
+      var badge = el("div", "clean");
+      badge.appendChild(icon(ICONS.check, 13));
+      badge.appendChild(el("span", null, "already correct"));
+      clean.appendChild(badge);
+      card.appendChild(clean);
+    }
+
+    if (Array.isArray(rec.notes) && rec.notes.length) {
+      var ul = el("ul", "notes");
+      for (var i = 0; i < rec.notes.length; i++) ul.appendChild(el("li", null, rec.notes[i]));
+      card.appendChild(ul);
+    }
+
+    /* --- footer / actions --- */
+    var foot = el("div", "card-foot");
+    var lang = [rec.target, rec.explanationLanguage].filter(Boolean).join(" · ");
+    foot.appendChild(el("span", "card-lang", lang));
+
+    var actions = el("div", "card-actions");
+
+    var copyBtn = iconButton("copy", "Copy corrected");
+    var done = icon(ICONS.check, 18);
+    done.classList.add("icon-done");
+    copyBtn.appendChild(done);
+    copyBtn.addEventListener("click", function () { onCopy(rec, copyBtn); });
+    actions.appendChild(copyBtn);
+
+    var askBtn = iconButton("ask", "Ask about this fix");
+    askBtn.setAttribute("aria-expanded", openAsk[rec.id] ? "true" : "false");
+    actions.appendChild(askBtn);
+
+    var delBtn = iconButton("trash", "Delete", "danger");
+    delBtn.addEventListener("click", function () { onDelete(rec.id); });
+    actions.appendChild(delBtn);
+
+    foot.appendChild(actions);
+    card.appendChild(foot);
+
+    /* --- ask panel --- */
+    var ask = el("div", "ask");
+    ask.setAttribute("data-open", openAsk[rec.id] ? "true" : "false");
+
+    var form = el("form", "ask-form");
+    var input = el("input", "ask-input");
+    input.type = "text";
+    input.placeholder = "Why was this changed?";
+    input.value = draft[rec.id] || "";
+    input.addEventListener("input", function () { draft[rec.id] = input.value; });
+
+    var send = el("button", "ask-send");
+    send.type = "submit";
+    send.setAttribute("aria-label", "Send question");
+    send.appendChild(icon(ICONS.send, 17));
+
+    form.appendChild(input);
+    form.appendChild(send);
+    ask.appendChild(form);
+
+    var thread = el("div", "thread");
+    ask.appendChild(thread);
+    card.appendChild(ask);
+
+    renderThread(thread, rec.id);
+
+    askBtn.addEventListener("click", function () {
+      var next = ask.getAttribute("data-open") !== "true";
+      openAsk[rec.id] = next;
+      ask.setAttribute("data-open", next ? "true" : "false");
+      askBtn.setAttribute("aria-expanded", next ? "true" : "false");
+      if (next) input.focus();
+    });
+
+    form.addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var q = input.value.trim();
+      if (!q || busy[rec.id]) return;
+      input.value = "";
+      draft[rec.id] = "";
+      onAsk(rec.id, q, thread, send);
+    });
+
+    if (busy[rec.id]) send.disabled = true;
+    return card;
+  }
+
+  function renderThread(thread, id) {
+    thread.textContent = "";
+    var msgs = threads[id] || [];
+    for (var i = 0; i < msgs.length; i++) {
+      var m = msgs[i];
+      var cls = m.role === "q" ? "bubble bubble--q" : (m.role === "err" ? "bubble bubble--err" : "bubble bubble--a");
+      thread.appendChild(el("div", cls, m.text));
+    }
+    if (busy[id]) {
+      var wait = el("div", "thinking");
+      wait.appendChild(el("span", "spinner"));
+      wait.appendChild(el("span", null, "fixen is thinking…"));
+      thread.appendChild(wait);
+    }
+  }
+
+  function render(state) {
+    var history = (state && Array.isArray(state.history)) ? state.history : [];
+
+    targetText.textContent = state && state.target ? state.target : "English";
+    countBadge.textContent = history.length + (history.length === 1 ? " entry" : " entries");
+    versionEl.textContent = state && state.version ? "fixen v" + state.version : "fixen";
+    clearBtn.hidden = history.length === 0;
+
+    timeline.textContent = "";
+    timeline.setAttribute("data-populated", history.length ? "true" : "false");
+
+    if (!history.length) {
+      timeline.appendChild(emptyTpl.content.cloneNode(true));
+      return;
+    }
+
+    for (var i = 0; i < history.length; i++) {
+      var rec = history[i];
+      if (!rec || !rec.id) continue;
+
+      var entry = el("div", "entry");
+      var isNew = !firstRender && !seenIds[rec.id];
+      if (isNew) entry.classList.add("entry--enter");
+      seenIds[rec.id] = true;
+
+      var when = el("div", "entry-when", relativeTime(rec.createdAt));
+      when.title = absoluteTime(rec.createdAt);
+      entry.appendChild(when);
+      entry.appendChild(el("div", "entry-node"));
+      entry.appendChild(buildCard(rec));
+      timeline.appendChild(entry);
+    }
+    firstRender = false;
+  }
+
+  /* ======================================================================
+     actions
+     ====================================================================== */
+  function flash(btn) {
+    btn.setAttribute("data-flash", "true");
+    setTimeout(function () { btn.removeAttribute("data-flash"); }, 1200);
+  }
+
+  function onCopy(rec, btn) {
+    flash(btn);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(rec.corrected || "").catch(function () {});
+    }
+    if (!HAS_ORIGIN) return;
+    post("/api/copy", { id: rec.id }).catch(function () { setOffline(true); });
+  }
+
+  function onDelete(id) {
+    post("/api/delete", { id: id }).then(function () {
+      delete threads[id]; delete openAsk[id]; delete draft[id]; delete busy[id];
+      poll(true);
+    }).catch(function (err) { setOffline(true); void err; });
+  }
+
+  function onAsk(id, question, thread, send) {
+    if (!threads[id]) threads[id] = [];
+    threads[id].push({ role: "q", text: question });
+    busy[id] = true;
+    send.disabled = true;
+    renderThread(thread, id);
+
+    post("/api/ask", { id: id, question: question }).then(function (data) {
+      threads[id].push({ role: "a", text: (data && data.answer) || "(no answer)" });
+    }).catch(function (err) {
+      threads[id].push({ role: "err", text: err.message || "request failed" });
+      setOffline(true);
+    }).then(function () {
+      busy[id] = false;
+      send.disabled = false;
+      renderThread(thread, id);
+    });
+  }
+
+  clearBtn.addEventListener("click", function () {
+    if (!window.confirm("Delete every saved correction? This cannot be undone.")) return;
+    post("/api/clear", {}).then(function () {
+      threads = Object.create(null);
+      openAsk = Object.create(null);
+      poll(true);
+    }).catch(function () { setOffline(true); });
+  });
+
+  /* ======================================================================
+     polling — re-render only when the payload actually changed
+     ====================================================================== */
+  // Opened straight off disk there is no origin to call: the browser blocks a
+  // file:///api/state fetch and logs a CORS error we can never catch. Skip the
+  // request entirely and show the offline state the same way a dead server does.
+  var HAS_ORIGIN = location.protocol === "http:" || location.protocol === "https:";
+
+  function poll(force) {
+    if (!HAS_ORIGIN) {
+      setOffline(true);
+      if (!timeline.firstChild) render({ history: [] });
+      return Promise.resolve();
+    }
+    return fetch("/api/state", { cache: "no-store" }).then(function (res) {
+      if (!res.ok) throw new Error("state " + res.status);
+      return res.text();
+    }).then(function (text) {
+      setOffline(false);
+      if (!force && text === lastPayload) return;
+      lastPayload = text;
+      var state;
+      try { state = JSON.parse(text); }
+      catch (e) { return; }
+      render(state);
+    }).catch(function () {
+      setOffline(true);
+      if (lastPayload === null) {
+        lastPayload = null;
+        if (!timeline.firstChild) render({ history: [] });
+      }
+    });
+  }
+
+  // relative timestamps go stale in a static DOM; refresh them between polls
+  setInterval(function () {
+    var nodes = timeline.querySelectorAll(".entry-when");
+    for (var i = 0; i < nodes.length; i++) {
+      var t = nodes[i].title;
+      if (!t) continue;
+      var parsed = Date.parse(t);
+      if (isFinite(parsed)) nodes[i].textContent = relativeTime(new Date(parsed).toISOString());
+    }
+  }, 30000);
+
+  render({ history: [] });
+  poll(true);
+  setInterval(function () { poll(false); }, 3000);
+
+  /* ======================================================================
+     self-test — window.__fixenDiffTest() in the console
+     ====================================================================== */
+  window.__fixenDiffTest = function () {
+    function seg(a, b, side) {
+      return diffSegments(wordTokens(a), wordTokens(b), side)
+        .map(function (s) { return s.kind[0] + ":" + s.text; }).join("|");
+    }
+    var cases = [
+      ["identical",     "i am fine",        "i am fine"],
+      ["pure insert",   "i fine",           "i am fine"],
+      ["pure delete",   "i am very fine",   "i am fine"],
+      ["mixed change",  "why this dont works?", "why doesn't this work?"],
+      ["empty original","",                 "hello there"]
+    ];
+    var out = cases.map(function (c) {
+      return c[0] + "\n  before: " + seg(c[1], c[2], "before") +
+                    "\n  after:  " + seg(c[1], c[2], "after");
+    }).join("\n");
+    console.log(out);
+    return out;
+  };
+})();
+</script>
+</body>
+</html>

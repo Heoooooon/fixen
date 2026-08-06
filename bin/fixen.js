@@ -1045,6 +1045,145 @@ function loadJob(id) {
   }
 }
 
+// -------------------------------------------------------------------- gui
+// `fixen --gui` serves a local dashboard over the correction history. Bound
+// to 127.0.0.1 only; the page itself lives in bin/gui.html so the npm "bin"
+// files ship it. Zero dependencies: node:http plus the helpers above.
+
+const GUI_PAGE = path.join(__dirname, "gui.html");
+const GUI_BODY_LIMIT = 64 * 1024;
+
+function readRequestBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    req.on("data", (chunk) => {
+      size += chunk.length;
+      if (size > GUI_BODY_LIMIT) {
+        reject(new Error("request body too large"));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    req.on("error", reject);
+  });
+}
+
+function findHistoryEntry(id) {
+  return loadHistory().find((rec) => rec.id === id) || null;
+}
+
+async function handleGuiRequest(req, res, opts) {
+  const sendJson = (status, payload) => {
+    res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
+    res.end(JSON.stringify(payload));
+  };
+  const url = new URL(req.url, "http://127.0.0.1");
+
+  if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html")) {
+    let page;
+    try {
+      page = fs.readFileSync(GUI_PAGE);
+    } catch {
+      sendJson(500, { error: `gui page missing: ${GUI_PAGE}` });
+      return;
+    }
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    res.end(page);
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/state") {
+    sendJson(200, {
+      version: VERSION,
+      target: opts.target,
+      lang: opts.lang,
+      history: loadHistory(),
+    });
+    return;
+  }
+
+  if (req.method === "POST") {
+    let body = {};
+    const raw = await readRequestBody(req);
+    if (raw.trim()) {
+      try {
+        body = JSON.parse(raw);
+      } catch {
+        sendJson(400, { error: "invalid JSON body" });
+        return;
+      }
+    }
+    switch (url.pathname) {
+      case "/api/copy": {
+        const record = findHistoryEntry(String(body.id || ""));
+        if (!record) return sendJson(404, { error: "no such correction" });
+        copyToClipboard(record.corrected);
+        return sendJson(200, { ok: true });
+      }
+      case "/api/delete": {
+        if (!findHistoryEntry(String(body.id || ""))) {
+          return sendJson(404, { error: "no such correction" });
+        }
+        deleteHistoryEntry(String(body.id));
+        return sendJson(200, { ok: true });
+      }
+      case "/api/clear":
+        clearHistory();
+        return sendJson(200, { ok: true });
+      case "/api/ask": {
+        const record = findHistoryEntry(String(body.id || ""));
+        if (!record) return sendJson(404, { error: "no such correction" });
+        const question = String(body.question || "").trim();
+        if (!question) return sendJson(400, { error: "question is required" });
+        const answer = await runPrompt(buildAskPrompt(record, question, opts), opts);
+        return sendJson(200, { answer });
+      }
+    }
+  }
+
+  sendJson(404, { error: "not found" });
+}
+
+function openInBrowser(url) {
+  if (boolish(process.env.FIXEN_GUI_NO_OPEN)) return;
+  const argv =
+    process.platform === "darwin" ? ["open", url]
+    : process.platform === "win32" ? ["cmd", "/c", "start", "", url]
+    : ["xdg-open", url];
+  try {
+    const child = spawn(argv[0], argv.slice(1), { detached: true, stdio: "ignore" });
+    child.on("error", () => {});
+    child.unref();
+  } catch {}
+}
+
+async function cmdGui(opts) {
+  const http = require("node:http");
+  const server = http.createServer((req, res) => {
+    handleGuiRequest(req, res, opts).catch((e) => {
+      if (!res.headersSent) {
+        res.writeHead(500, { "content-type": "application/json; charset=utf-8" });
+      }
+      res.end(JSON.stringify({ error: e.message }));
+    });
+  });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(opts.port ?? 5177, "127.0.0.1", resolve);
+  });
+  const url = `http://127.0.0.1:${server.address().port}`;
+  process.stdout.write(`${OUT.cyan("gui")}   ${OUT.bold(url)} ${OUT.dim("(Ctrl+C to stop)")}\n`);
+  openInBrowser(url);
+  await new Promise((resolve) => {
+    process.once("SIGINT", resolve);
+    process.once("SIGTERM", resolve);
+  });
+  server.close();
+}
+
 // ---------------------------------------------------------------- install
 // Writes the full rule ONCE to ~/.config/fixen/RULE.md, then adds a single
 // marked line to each CLI's global instruction file: a compact version of the
@@ -1401,6 +1540,7 @@ Usage:
       correct text meant for a human reader (Slack, email, comments), show
       what changed, and copy the corrected text to the clipboard — you stay
       the last checkpoint before anything is sent
+  fixen --gui [--port <n>]            open the local correction-history dashboard
   fixen --last                        print the most recent sidecar correction
   fixen --copy                        copy the corrected sentence to the clipboard
   fixen --ask [options] <question...> ask about the most recent correction
@@ -1429,6 +1569,8 @@ Options:
   -f, --file <path>      (install) extra instruction file to add the line to
       --notify           sidecar-correct the supplied text and notify
       --polish           correct, show what changed, and copy to the clipboard
+      --gui              serve the history dashboard on 127.0.0.1 and open it
+      --port <n>         (gui) port to bind (default 5177; 0 = random free port)
       --hook             queue a sidecar job from prompt-submit hook JSON
       --last             show the latest unexpired sidecar correction
       --copy             copy the latest corrected sentence to the clipboard
@@ -1456,6 +1598,7 @@ Environment:
   FIXEN_NOTIFY_DISABLE      1/true to save sidecar results without desktop alerts
   FIXEN_NOTIFY_ICON         image path shown instead of the notifier's own icon
   FIXEN_NOTIFY_IGNORE_DND   1/true to show banners even in Do Not Disturb
+  FIXEN_GUI_NO_OPEN         1/true to start --gui without opening the browser
   FIXEN_REGISTRY            npm registry for update (default: registry.npmjs.org)
   FIXEN_UPDATE_CMD          custom upgrade command; must contain {spec} → fixen-cli@latest
   FIXEN_DEBUG               1 to print stack traces on unexpected errors
@@ -1474,6 +1617,7 @@ Examples:
   fixen --last
   fixen --ask "왜 work로 고쳤어?"
   fixen --clear
+  fixen --gui
   fixen install -t English -e -l Korean
   fixen install -f ~/.someai/INSTRUCTIONS.md
   fixen update --check`;
@@ -1517,6 +1661,15 @@ function parseArgs(argv) {
       case "--ask": opts.ask = true; break;
       case "--clear": opts.clear = true; break;
       case "--check": opts.check = true; break;
+      case "--gui": opts.gui = true; break;
+      case "--port": {
+        const v = flagValue(argv, i, a);
+        i++;
+        const port = Number(v);
+        if (!Number.isInteger(port) || port < 0 || port > 65535) fail(`invalid --port '${v}'`);
+        opts.port = port;
+        break;
+      }
       case "-b": case "--backend": opts.backend = flagValue(argv, i, a); i++; break;
       case "-c": case "--command": opts.command = flagValue(argv, i, a); i++; break;
       case "-l": case "--lang": opts.lang = flagValue(argv, i, a); i++; break;
@@ -1576,10 +1729,20 @@ async function main() {
   // -e / --no-explain win; only an untouched flag falls through to env, config.
   opts.explain ??= boolish(process.env.FIXEN_EXPLAIN) ?? boolish(cfg.explain) ?? false;
 
-  const modes = [opts.notify, opts.polish, opts.hook, opts.last, opts.ask, opts.clear, opts.copy]
+  const modes = [opts.notify, opts.polish, opts.hook, opts.last, opts.ask, opts.clear, opts.copy, opts.gui]
     .filter(Boolean).length;
-  if (modes > 1) fail("use only one of --notify, --polish, --hook, --last, --copy, --ask, or --clear");
+  if (modes > 1) fail("use only one of --notify, --polish, --hook, --last, --copy, --ask, --clear, or --gui");
   if (opts.job && !opts.notify) fail("--job is only valid with --notify");
+  if (opts.port !== undefined && !opts.gui) fail("--port is only valid with --gui");
+
+  if (opts.gui) {
+    if (opts.words.length > 0) fail("--gui does not take text");
+    // The dashboard works without a backend; only /api/ask needs one, and it
+    // reports its own error if none is configured.
+    if (!opts.command && !opts.backend) opts.backend = detectBackend() || undefined;
+    await cmdGui(opts);
+    return;
+  }
 
   // Administrative subcommands retain the original lone-word dispatch rule,
   // so text such as `fixen status is great` remains correction input.

@@ -778,3 +778,147 @@ test("copy: without a saved correction it fails loudly and takes no text", () =>
   assert.match(run(["--copy", "extra text"], home).stderr, /does not take text/);
   assert.match(run(["--copy", "--last"], home).stderr, /only one of/);
 });
+
+// ------------------------------------------------------------ polish
+
+test("parsePolishOutput: bare text and explain format both parse", () => {
+  assert.deepEqual(fx.parsePolishOutput("It's a test.", false), {
+    corrected: "It's a test.",
+    notes: [],
+  });
+  const explained = fx.parsePolishOutput(
+    "Corrected: It's a test.\nNotes:\n- its → it's\n* second note",
+    true
+  );
+  assert.deepEqual(explained, {
+    corrected: "It's a test.",
+    notes: ["its → it's", "second note"],
+  });
+  // A malformed explain reply degrades to bare text instead of failing.
+  assert.deepEqual(fx.parsePolishOutput("just a sentence", true), {
+    corrected: "just a sentence",
+    notes: [],
+  });
+});
+
+// Shadows the platform clipboard command with a stub that records its stdin,
+// so polish tests never touch the user's real clipboard.
+function clipboardStub(home) {
+  const bin = path.join(home, "stub-bin");
+  const sink = path.join(home, "clipboard.txt");
+  fs.mkdirSync(bin, { recursive: true });
+  for (const name of ["pbcopy", "wl-copy", "xclip"]) {
+    const f = path.join(bin, name);
+    fs.writeFileSync(f, `#!/bin/sh\ncat > ${JSON.stringify(sink)}\n`);
+    fs.chmodSync(f, 0o755);
+  }
+  return { PATH: `${bin}:${process.env.PATH}`, sink };
+}
+
+test("polish: shows the diff, prints the fix, and copies it", () => {
+  const home = tmpHome();
+  const cmd = sidecarScript(home, "It's a beautiful day.", "polish.sh");
+  const { PATH, sink } = clipboardStub(home);
+
+  const r = run(["--polish", "-c", cmd, "its a beautiful day."], home, { PATH });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /its → It's/);
+  assert.match(r.stdout, /It's a beautiful day\./);
+  assert.match(r.stdout, /copied — paste when ready/);
+  assert.equal(fs.readFileSync(sink, "utf8"), "It's a beautiful day.");
+});
+
+test("polish: already-clean text is copied as-is with no diff line", () => {
+  const home = tmpHome();
+  const cmd = sidecarScript(home, "This is fine.", "polish.sh");
+  const { PATH, sink } = clipboardStub(home);
+
+  const r = run(["--polish", "-c", cmd, "This is fine."], home, { PATH });
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(!r.stdout.includes("→"), r.stdout);
+  assert.match(r.stdout, /already clean — copied as-is/);
+  assert.equal(fs.readFileSync(sink, "utf8"), "This is fine.");
+});
+
+test("polish: explain mode prints notes under the corrected text", () => {
+  const home = tmpHome();
+  const reply = "Corrected: It's a test.\nNotes:\n- its → it's 축약형입니다";
+  const cmd = sidecarScript(home, reply, "polish.sh");
+  const { PATH, sink } = clipboardStub(home);
+
+  const r = run(["--polish", "-e", "-c", cmd, "its a test."], home, { PATH });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /It's a test\./);
+  assert.match(r.stdout, /• its → it's 축약형입니다/);
+  assert.equal(fs.readFileSync(sink, "utf8"), "It's a test.");
+});
+
+test("polish: stdin works, empty input and mode conflicts fail loudly", () => {
+  const home = tmpHome();
+  const cmd = sidecarScript(home, "It's a test.", "polish.sh");
+  const { PATH, sink } = clipboardStub(home);
+
+  const piped = runIn(["--polish", "-c", cmd], home, "its a test.", { PATH });
+  assert.equal(piped.status, 0, piped.stderr);
+  assert.equal(fs.readFileSync(sink, "utf8"), "It's a test.");
+
+  assert.match(runIn(["--polish", "-c", cmd], home, "", { PATH }).stderr, /--polish needs text/);
+  assert.match(run(["--polish", "--last"], home).stderr, /only one of/);
+});
+
+// --------------------------------------------------------------- history
+
+const HISTORY_FILE = (home) => path.join(CONFIG(home), "history.jsonl");
+
+test("history: a stored correction is also appended to history.jsonl", () => {
+  const home = tmpHome();
+  const cmd = sidecarScript(home, CORRECTION_REPLY);
+  const env = { FIXEN_NOTIFY_DISABLE: "1" };
+
+  run(["--notify", "-c", cmd, "its a beautiful day"], home, env);
+  run(["--notify", "-c", cmd, "its a beautiful day"], home, env);
+
+  assert.equal(fs.statSync(HISTORY_FILE(home)).mode & 0o777, 0o600);
+  const lines = fs.readFileSync(HISTORY_FILE(home), "utf8").trim().split("\n");
+  assert.equal(lines.length, 2);
+  for (const line of lines) {
+    const rec = JSON.parse(line);
+    assert.equal(rec.corrected, "it's a beautiful day");
+    assert.equal(rec.original, "its a beautiful day");
+    assert.deepEqual(rec.notes, ["소유격 its가 아니라 축약형 it's입니다"]);
+    assert.ok(Number.isFinite(Date.parse(rec.createdAt)));
+    assert.match(rec.id, /^[0-9a-f-]{36}$/i);
+  }
+});
+
+test("history: FIXEN_SIDECAR_NO_STORE keeps history empty too", () => {
+  const home = tmpHome();
+  const cmd = sidecarScript(home, CORRECTION_REPLY);
+  const r = run(["--notify", "-c", cmd, "its a beautiful day"], home, {
+    FIXEN_NOTIFY_DISABLE: "1",
+    FIXEN_SIDECAR_NO_STORE: "1",
+  });
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(!fs.existsSync(HISTORY_FILE(home)));
+});
+
+test("history: appendHistory caps the file at 500 newest entries", () => {
+  const home = tmpHome();
+  const script = [
+    `const fx = require(${JSON.stringify(BIN)});`,
+    "for (let i = 0; i < 505; i++) {",
+    "  fx.appendHistory({ id: `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`,",
+    "    createdAt: new Date().toISOString(), target: 'English', explanationLanguage: 'Korean',",
+    "    original: `bad ${i}`, corrected: `good ${i}`, notes: [] });",
+    "}",
+    "const all = fx.loadHistory();",
+    "console.log(all.length, all[0].corrected, all[all.length - 1].corrected);",
+  ].join("\n");
+  const r = spawnSync(process.execPath, ["-e", script], {
+    encoding: "utf8",
+    env: { ...process.env, HOME: home, XDG_CONFIG_HOME: path.join(home, ".config"), NO_COLOR: "1" },
+  });
+  assert.equal(r.status, 0, r.stderr);
+  // loadHistory returns newest first; the oldest 5 entries were dropped.
+  assert.equal(r.stdout.trim(), "500 good 504 good 5");
+});

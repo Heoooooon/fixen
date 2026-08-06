@@ -438,6 +438,29 @@ async function correct(sentence, opts) {
   return runPrompt(buildPrompt(sentence, opts), opts);
 }
 
+// ---------------------------------------------------------------- polish
+// `fixen --polish` corrects text meant for a human reader (Slack, email,
+// issue comments), shows what changed, and copies the corrected text to the
+// clipboard — the user stays the last checkpoint before anything is sent.
+
+// The backend replies either with bare corrected text or, in explain mode,
+// with the "Corrected:/Notes:" format from buildPrompt. A malformed explain
+// reply degrades to bare text rather than failing the run.
+function parsePolishOutput(text, explain) {
+  const out = String(text).trim();
+  if (explain) {
+    const m = out.match(/^Corrected:\s*([\s\S]*?)(?:\n+\s*Notes:\s*\n?([\s\S]*))?$/i);
+    if (m && m[1].trim()) {
+      const notes = (m[2] || "")
+        .split("\n")
+        .map((line) => line.trim().replace(/^[-*•]\s*/, ""))
+        .filter(Boolean);
+      return { corrected: m[1].trim(), notes };
+    }
+  }
+  return { corrected: out, notes: [] };
+}
+
 // ---------------------------------------------------------------- sidecar
 // Prompt-submit hooks call `fixen --hook`. It stores only a filtered, bounded
 // prose candidate in a private job and exits immediately; a detached worker
@@ -543,6 +566,70 @@ function saveLastCorrection(record) {
   fs.writeFileSync(tmp, JSON.stringify(record, null, 2) + "\n", { mode: 0o600 });
   fs.renameSync(tmp, LAST_CORRECTION_FILE);
   fs.chmodSync(LAST_CORRECTION_FILE, 0o600);
+}
+
+// ---------------------------------------------------------------- history
+// Every stored sidecar correction is also appended to history.jsonl so the
+// GUI can show a learning timeline. Unlike last-correction.json this file
+// does not expire; it is capped at HISTORY_LIMIT entries instead.
+
+const HISTORY_FILE = path.join(CONFIG_DIR, "history.jsonl");
+const HISTORY_LIMIT = 500;
+
+function readHistoryLines() {
+  let raw;
+  try {
+    raw = fs.readFileSync(HISTORY_FILE, "utf8");
+  } catch (e) {
+    if (e.code === "ENOENT") return [];
+    throw e;
+  }
+  return raw.split("\n").filter((line) => line.trim());
+}
+
+function appendHistory(record) {
+  fs.mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
+  const lines = readHistoryLines();
+  lines.push(JSON.stringify(record));
+  const kept = lines.slice(-HISTORY_LIMIT);
+  const tmp = `${HISTORY_FILE}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, kept.join("\n") + "\n", { mode: 0o600 });
+  fs.renameSync(tmp, HISTORY_FILE);
+  fs.chmodSync(HISTORY_FILE, 0o600);
+}
+
+// Newest first; malformed lines are skipped, never fatal.
+function loadHistory() {
+  const records = [];
+  for (const line of readHistoryLines()) {
+    try {
+      const rec = JSON.parse(line);
+      if (
+        rec && typeof rec.original === "string" && typeof rec.corrected === "string" &&
+        typeof rec.id === "string" && Array.isArray(rec.notes) &&
+        Number.isFinite(Date.parse(rec.createdAt))
+      ) {
+        records.push(rec);
+      }
+    } catch {}
+  }
+  return records.reverse();
+}
+
+function deleteHistoryEntry(id) {
+  const kept = loadHistory().filter((rec) => rec.id !== id).reverse();
+  if (kept.length === 0) {
+    fs.rmSync(HISTORY_FILE, { force: true });
+    return;
+  }
+  const tmp = `${HISTORY_FILE}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, kept.map((r) => JSON.stringify(r)).join("\n") + "\n", { mode: 0o600 });
+  fs.renameSync(tmp, HISTORY_FILE);
+  fs.chmodSync(HISTORY_FILE, 0o600);
+}
+
+function clearHistory() {
+  fs.rmSync(HISTORY_FILE, { force: true });
 }
 
 function loadLastCorrection() {
@@ -796,8 +883,12 @@ async function notifyMessage(message, opts) {
   };
   await withSidecarLock(async () => {
     showDesktopNotification(record);
-    if (boolish(process.env.FIXEN_SIDECAR_NO_STORE)) clearLastCorrection();
-    else saveLastCorrection(record);
+    if (boolish(process.env.FIXEN_SIDECAR_NO_STORE)) {
+      clearLastCorrection();
+    } else {
+      saveLastCorrection(record);
+      appendHistory(record);
+    }
   });
   return record;
 }
@@ -1306,6 +1397,10 @@ Usage:
   fixen --hook [options]
       prompt-submit adapter: validate hook JSON from stdin, queue --notify in a
       detached worker, and exit immediately without delaying the AI agent
+  fixen --polish [options] <sentence...>
+      correct text meant for a human reader (Slack, email, comments), show
+      what changed, and copy the corrected text to the clipboard — you stay
+      the last checkpoint before anything is sent
   fixen --last                        print the most recent sidecar correction
   fixen --copy                        copy the corrected sentence to the clipboard
   fixen --ask [options] <question...> ask about the most recent correction
@@ -1333,6 +1428,7 @@ Options:
   -m, --model <model>    model for claude/gemini/ollama/api backends
   -f, --file <path>      (install) extra instruction file to add the line to
       --notify           sidecar-correct the supplied text and notify
+      --polish           correct, show what changed, and copy to the clipboard
       --hook             queue a sidecar job from prompt-submit hook JSON
       --last             show the latest unexpired sidecar correction
       --copy             copy the latest corrected sentence to the clipboard
@@ -1373,6 +1469,7 @@ Examples:
   fixen -t Japanese "私は昨日学校に行きたです"
   fixen -b ollama -m llama3.1 "he dont know nothing"
   fixen -c 'my-llm --quiet {prompt}' "its a beautiful day"
+  fixen --polish -e -l Korean "sorry for late reply, i has attach the file"
   fixen --notify -e -l Korean "why this doesn't works?"
   fixen --last
   fixen --ask "왜 work로 고쳤어?"
@@ -1413,6 +1510,7 @@ function parseArgs(argv) {
       case "-e": case "--explain": opts.explain = true; break;
       case "--no-explain": opts.explain = false; break;
       case "--notify": opts.notify = true; break;
+      case "--polish": opts.polish = true; break;
       case "--hook": opts.hook = true; break;
       case "--last": opts.last = true; break;
       case "--copy": opts.copy = true; break;
@@ -1478,9 +1576,9 @@ async function main() {
   // -e / --no-explain win; only an untouched flag falls through to env, config.
   opts.explain ??= boolish(process.env.FIXEN_EXPLAIN) ?? boolish(cfg.explain) ?? false;
 
-  const modes = [opts.notify, opts.hook, opts.last, opts.ask, opts.clear, opts.copy]
+  const modes = [opts.notify, opts.polish, opts.hook, opts.last, opts.ask, opts.clear, opts.copy]
     .filter(Boolean).length;
-  if (modes > 1) fail("use only one of --notify, --hook, --last, --copy, --ask, or --clear");
+  if (modes > 1) fail("use only one of --notify, --polish, --hook, --last, --copy, --ask, or --clear");
   if (opts.job && !opts.notify) fail("--job is only valid with --notify");
 
   // Administrative subcommands retain the original lone-word dispatch rule,
@@ -1572,6 +1670,42 @@ async function main() {
     return;
   }
 
+  if (opts.polish) {
+    let text;
+    if (opts.words.length > 0) {
+      text = opts.words.join(" ");
+    } else if (!process.stdin.isTTY) {
+      text = (await readStdin()).trim();
+    }
+    if (!text) fail("--polish needs text");
+    const done = statusLine(backend);
+    let parsed;
+    try {
+      parsed = parsePolishOutput(await correct(text, opts), opts.explain);
+    } catch (e) {
+      done();
+      fail(e.message);
+    }
+    done();
+    const changed = parsed.corrected !== text.trim();
+    if (changed) {
+      const headline = correctionHeadline(
+        { original: text, corrected: parsed.corrected },
+        200
+      );
+      process.stdout.write(`${OUT.yellow("Δ")} ${headline}\n`);
+    }
+    process.stdout.write(`${OUT.green("✔")} ${OUT.bold(parsed.corrected)}\n`);
+    for (const note of parsed.notes) {
+      process.stdout.write(`  ${OUT.dim(`• ${note}`)}\n`);
+    }
+    copyToClipboard(parsed.corrected);
+    process.stdout.write(
+      OUT.dim(changed ? "copied — paste when ready" : "already clean — copied as-is") + "\n"
+    );
+    return;
+  }
+
   if (opts.ask) {
     let question = opts.words.join(" ").trim();
     if (!question && !process.stdin.isTTY) question = (await readStdin()).trim();
@@ -1625,9 +1759,14 @@ if (require.main === module) {
 }
 
 module.exports = {
+  appendHistory,
+  loadHistory,
+  deleteHistoryEntry,
+  clearHistory,
   START_MARK,
   END_MARK,
   buildPrompt,
+  parsePolishOutput,
   buildSidecarPrompt,
   parseSidecarResult,
   prepareSidecarText,

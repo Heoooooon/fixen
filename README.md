@@ -45,6 +45,7 @@ fixen                               # interactive mode (type lines, Ctrl+D to qu
 fixen -e "sentence"                 # also explain what was fixed
 fixen -e -l Korean "sentence"       # explanations in Korean
 fixen -t Japanese "日本語の文"        # correct any language, not just English
+fixen --polish "draft message"      # fix a message for humans: show the diff, copy to clipboard
 fixen --notify -e "sentence"        # correct in a desktop notification
 fixen --last                        # show the most recent notification correction
 fixen --ask "why was this changed?" # ask about that correction
@@ -130,6 +131,25 @@ Desktop notifications lead with the actual fix — `its → it's` — then the c
 Delivery uses `terminal-notifier` when it is on `PATH` (`brew install terminal-notifier`), falling back to built-in macOS notifications, or `notify-send` on Linux. terminal-notifier is optional but earns the install: banners are grouped so a new correction replaces the previous card instead of stacking, **clicking one copies the corrected sentence to your clipboard**, `FIXEN_NOTIFY_ICON` swaps in your own image, and `FIXEN_NOTIFY_IGNORE_DND=1` shows banners through Do Not Disturb. `fixen --copy` does the same copy from the terminal.
 
 > **macOS banners are silent-fail.** Banners are attributed to whatever posts them — **terminal-notifier**, or **Script Editor** on the `osascript` fallback — never to fixen itself. If that app is off in **System Settings → Notifications**, or a Focus mode is active, macOS drops the banner and still reports success; fixen cannot detect this. `FIXEN_NOTIFY_IGNORE_DND=1` covers the Focus case; either way the correction is saved, so `fixen --last` shows what a missing banner would have said.
+
+## History dashboard (GUI)
+
+Every correction the sidecar stores is also appended to a private history file
+(`~/.config/fixen/history.jsonl`, newest 500 entries, `0600`). `fixen --gui`
+turns that file into a local learning dashboard:
+
+```sh
+fixen --gui              # serve on 127.0.0.1:5177 and open the browser
+fixen --gui --port 0     # pick a random free port
+FIXEN_GUI_NO_OPEN=1 fixen --gui   # start without opening a browser
+```
+
+The page is a single zero-dependency HTML file served only on `127.0.0.1`:
+a timeline of your corrections with word-level diff highlighting, the reasons
+for each fix, one-click copy of the corrected sentence, per-correction
+follow-up questions (routed through your configured backend, like `--ask`),
+and delete/clear controls. `FIXEN_SIDECAR_NO_STORE=1` keeps history empty,
+exactly as it does for `--last`.
 
 ## Backends
 

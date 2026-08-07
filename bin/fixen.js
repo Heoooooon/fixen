@@ -632,6 +632,25 @@ function clearHistory() {
   fs.rmSync(HISTORY_FILE, { force: true });
 }
 
+// Every correction surface (one-shot, stdin/hotkey, polish, sidecar) funnels
+// its result here so the GUI timeline sees them all. Unchanged text is not a
+// correction; FIXEN_NO_HISTORY opts out entirely.
+function recordCorrection(original, corrected, notes, opts) {
+  if (boolish(process.env.FIXEN_NO_HISTORY)) return;
+  const from = String(original).trim();
+  const to = String(corrected).trim();
+  if (!to || from === to) return;
+  appendHistory({
+    id: crypto.randomUUID(),
+    createdAt: new Date().toISOString(),
+    target: opts.target,
+    explanationLanguage: opts.lang,
+    original: from,
+    corrected: to,
+    notes: notes || [],
+  });
+}
+
 function loadLastCorrection() {
   let record;
   try {
@@ -2167,6 +2186,7 @@ async function main() {
     for (const note of parsed.notes) {
       process.stdout.write(`  ${OUT.dim(`• ${note}`)}\n`);
     }
+    recordCorrection(text, parsed.corrected, parsed.notes, opts);
     copyToClipboard(parsed.corrected);
     process.stdout.write(
       OUT.dim(changed ? "copied — paste when ready" : "already clean — copied as-is") + "\n"
@@ -2192,15 +2212,18 @@ async function main() {
   }
 
   if (opts.words.length > 0) {
+    const text = opts.words.join(" ");
     const done = statusLine(backend);
     let out;
     try {
-      out = await correct(opts.words.join(" "), opts);
+      out = await correct(text, opts);
     } catch (e) {
       done();
       fail(e.message);
     }
     done();
+    const parsed = parsePolishOutput(out, opts.explain);
+    recordCorrection(text, parsed.corrected, parsed.notes, opts);
     process.stdout.write(prettyResult(out, opts) + "\n");
   } else if (!process.stdin.isTTY) {
     const text = (await readStdin()).trim();
@@ -2211,6 +2234,8 @@ async function main() {
     } catch (e) {
       fail(e.message);
     }
+    const parsed = parsePolishOutput(out, opts.explain);
+    recordCorrection(text, parsed.corrected, parsed.notes, opts);
     process.stdout.write(prettyResult(out, opts) + "\n");
   } else {
     await interactive(opts);

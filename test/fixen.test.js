@@ -1114,3 +1114,52 @@ test("hotkey: the pbs entry is old-style-plist quoted so defaults can parse it",
   assert.equal(args[4], '"(null) - Fix with fixen - runWorkflowAsService"');
   assert.match(args[5], /key_equivalent = "\^~@f"/);
 });
+
+// ------------------------------------------------- history: all paths
+
+test("history: a plain one-shot correction is recorded when text changed", () => {
+  const home = tmpHome();
+  const cmd = sidecarScript(home, "it's a beautiful day", "plain.sh");
+  const r = run(["-c", cmd, "--no-explain", "its a beautiful day"], home);
+  assert.equal(r.status, 0, r.stderr);
+  const lines = fs.readFileSync(HISTORY_FILE(home), "utf8").trim().split("\n");
+  assert.equal(lines.length, 1);
+  const rec = JSON.parse(lines[0]);
+  assert.equal(rec.original, "its a beautiful day");
+  assert.equal(rec.corrected, "it's a beautiful day");
+  assert.deepEqual(rec.notes, []);
+  assert.match(rec.id, /^[0-9a-f-]{36}$/i);
+});
+
+test("history: an unchanged plain reply records nothing", () => {
+  const home = tmpHome();
+  const cmd = sidecarScript(home, "already clean", "same.sh");
+  const r = run(["-c", cmd, "--no-explain", "already clean"], home);
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(!fs.existsSync(HISTORY_FILE(home)));
+});
+
+test("history: a changed --polish correction is recorded with notes", () => {
+  const home = tmpHome();
+  const reply = "Corrected: it's a beautiful day\nNotes:\n- its → it's";
+  const cmd = sidecarScript(home, reply, "polish.sh");
+  // Stub pbcopy so the test never touches the real clipboard.
+  fs.writeFileSync(path.join(home, "pbcopy"), "#!/bin/sh\ncat >/dev/null\n", { mode: 0o755 });
+  const r = run(["--polish", "-e", "-c", cmd, "its a beautiful day"], home, {
+    PATH: `${home}:${process.env.PATH}`,
+  });
+  assert.equal(r.status, 0, r.stderr);
+  const rec = JSON.parse(fs.readFileSync(HISTORY_FILE(home), "utf8").trim());
+  assert.equal(rec.corrected, "it's a beautiful day");
+  assert.deepEqual(rec.notes, ["its → it's"]);
+});
+
+test("history: FIXEN_NO_HISTORY suppresses recording on the plain path", () => {
+  const home = tmpHome();
+  const cmd = sidecarScript(home, "it's a beautiful day", "plain2.sh");
+  const r = run(["-c", cmd, "--no-explain", "its a beautiful day"], home, {
+    FIXEN_NO_HISTORY: "1",
+  });
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(!fs.existsSync(HISTORY_FILE(home)));
+});

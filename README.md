@@ -151,6 +151,29 @@ follow-up questions (routed through your configured backend, like `--ask`),
 and delete/clear controls. `FIXEN_SIDECAR_NO_STORE=1` keeps history empty,
 exactly as it does for `--last`.
 
+## Fix anywhere: the global hotkey (macOS)
+
+```sh
+fixen hotkey
+```
+
+This installs a **"Fix with fixen" quick action** (`~/Library/Services`) and
+binds **⌃⌥⌘F**: select text in any app — Slack, Mail, a browser textarea —
+press the shortcut, and the corrected text **replaces the selection in
+place**. The replacement is done by macOS Services itself (the same plumbing
+as the built-in Transformations menu), so fixen needs no accessibility
+permissions and never simulates keystrokes. The service runs your configured
+backend with a 45s ceiling; corrections also work from the right-click →
+Services menu.
+
+- Change the shortcut: System Settings → Keyboard → Keyboard Shortcuts →
+  Services → Text → Fix with fixen.
+- `FIXEN_HOTKEY_NO_REGISTER=1 fixen hotkey` installs the service without
+  touching your shortcut settings.
+- `fixen uninstall` removes the quick action along with everything else.
+- macOS asks once per app before a service may replace text — that first
+  prompt is expected.
+
 ## Backends
 
 Auto-detected in this order: `claude` → `codex` → `gjc` → `gemini` → `ollama` → `api` (if an API key is set). Pick one explicitly with `-b`:

@@ -1049,3 +1049,56 @@ test("gui: /api/ask answers through the configured backend", async () => {
     gui.kill();
   }
 });
+
+// ---------------------------------------------------------------- hotkey
+
+const DARWIN = process.platform === "darwin";
+const SERVICE_DIR = (home) => path.join(home, "Library", "Services", "Fix with fixen.workflow");
+
+test("hotkey: installs a valid Services quick action bundle", { skip: !DARWIN }, () => {
+  const home = tmpHome();
+  const env = { FIXEN_HOTKEY_NO_REGISTER: "1" };
+  const r = run(["hotkey"], home, env);
+  assert.equal(r.status, 0, r.stderr);
+
+  const bundle = SERVICE_DIR(home);
+  const infoPlist = path.join(bundle, "Contents", "Info.plist");
+  const wflow = path.join(bundle, "Contents", "Resources", "document.wflow");
+  for (const f of [infoPlist, wflow]) {
+    assert.ok(fs.existsSync(f), `missing ${f}`);
+    const lint = spawnSync("plutil", ["-lint", f], { encoding: "utf8" });
+    assert.equal(lint.status, 0, lint.stdout + lint.stderr);
+  }
+
+  const info = fs.readFileSync(infoPlist, "utf8");
+  assert.match(info, /NSSendTypes/);
+  assert.match(info, /NSReturnTypes/);
+  assert.match(info, /public\.utf8-plain-text/);
+  assert.match(info, /runWorkflowAsService/);
+
+  const doc = fs.readFileSync(wflow, "utf8");
+  assert.ok(doc.includes("com.apple.RunShellScript"), "missing RunShellScript action");
+  assert.ok(doc.includes(process.execPath), "script must embed the node path");
+  assert.ok(doc.includes(BIN), "script must embed the fixen.js path");
+
+  // Idempotent: re-running rewrites the bundle without error.
+  assert.equal(run(["hotkey"], home, env).status, 0);
+});
+
+test("hotkey: status reports it and uninstall removes it", { skip: !DARWIN }, () => {
+  const home = tmpHome();
+  const env = { FIXEN_HOTKEY_NO_REGISTER: "1" };
+  run(["hotkey"], home, env);
+  assert.ok(fs.existsSync(SERVICE_DIR(home)));
+
+  const st = run(["status"], home, env);
+  assert.equal(st.status, 0);
+  assert.match(st.stdout, /hotkey/);
+
+  const un = run(["uninstall"], home, env);
+  assert.equal(un.status, 0, un.stderr);
+  assert.ok(!fs.existsSync(SERVICE_DIR(home)), "uninstall must remove the service bundle");
+
+  const st2 = run(["status"], home, env);
+  assert.doesNotMatch(st2.stdout, /hotkey: on/);
+});

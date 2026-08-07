@@ -1332,6 +1332,10 @@ function cmdUninstall() {
       process.stdout.write(`${OUT.green("ok")}    removed: ${OUT.dim(f)}\n`);
     }
   }
+  if (fs.existsSync(SERVICE_BUNDLE)) {
+    fs.rmSync(SERVICE_BUNDLE, { recursive: true, force: true });
+    process.stdout.write(`${OUT.green("ok")}    ${OUT.bold("hotkey")}: removed\n`);
+  }
 }
 
 function onOff(installed) {
@@ -1340,12 +1344,303 @@ function onOff(installed) {
 
 function cmdStatus() {
   process.stdout.write(`${onOff(fs.existsSync(RULE_FILE))}  ${OUT.bold("rule")}: ${OUT.dim(RULE_FILE)}\n`);
+  process.stdout.write(`${onOff(fs.existsSync(SERVICE_BUNDLE))}  ${OUT.bold("hotkey")}: ${OUT.dim(SERVICE_BUNDLE)}\n`);
   for (const t of allTargets()) {
     const installed = fs.existsSync(t.file) &&
       fs.readFileSync(t.file, "utf8").includes(START_MARK);
     if (!installed && t.name !== "custom" && !fs.existsSync(t.base)) continue; // CLI not installed — noise
     process.stdout.write(`${onOff(installed)}  ${OUT.bold(t.name)}: ${OUT.dim(t.file)}\n`);
   }
+}
+
+// ---------------------------------------------------------------- hotkey
+// `fixen hotkey` installs a macOS Services quick action: select text in ANY
+// app, press the shortcut, and the selection is replaced with the corrected
+// text. Services with both NSSendTypes and NSReturnTypes get the replacement
+// behavior from macOS itself — no accessibility API, no key simulation.
+
+const SERVICE_NAME = "Fix with fixen";
+const SERVICE_BUNDLE = path.join(os.homedir(), "Library", "Services", `${SERVICE_NAME}.workflow`);
+const DEFAULT_HOTKEY = "^~@f"; // Ctrl+Opt+Cmd+F in pbs notation
+
+function xmlEscape(s) {
+  return String(s).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+}
+
+// The service runs outside a login shell, so PATH (node, backend CLIs) is
+// captured at install time. Corrections come back as plain text on stdout,
+// which macOS pastes over the selection.
+function hotkeyScript() {
+  return [
+    `export PATH=${shQuote(process.env.PATH || "/usr/bin:/bin")}`,
+    'export FIXEN_BACKEND_TIMEOUT="${FIXEN_BACKEND_TIMEOUT:-45}"',
+    `exec ${shQuote(process.execPath)} ${shQuote(__filename)} --no-explain`,
+  ].join("\n");
+}
+
+function hotkeyInfoPlist() {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleIdentifier</key>
+	<string>cli.fixen.hotkey</string>
+	<key>CFBundleName</key>
+	<string>${xmlEscape(SERVICE_NAME)}</string>
+	<key>CFBundleShortVersionString</key>
+	<string>${VERSION}</string>
+	<key>NSServices</key>
+	<array>
+		<dict>
+			<key>NSMenuItem</key>
+			<dict>
+				<key>default</key>
+				<string>${xmlEscape(SERVICE_NAME)}</string>
+			</dict>
+			<key>NSMessage</key>
+			<string>runWorkflowAsService</string>
+			<key>NSSendTypes</key>
+			<array>
+				<string>public.utf8-plain-text</string>
+			</array>
+			<key>NSReturnTypes</key>
+			<array>
+				<string>public.utf8-plain-text</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>
+`;
+}
+
+// Modeled on the system's own text-input service workflows (Show Map): one
+// com.apple.RunShellScript action, stdin input, service metadata marking text
+// in / text out so the returned string replaces the selection.
+function hotkeyWorkflowPlist() {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>AMApplicationBuild</key>
+	<string>346</string>
+	<key>AMApplicationVersion</key>
+	<string>2.3</string>
+	<key>AMDocumentVersion</key>
+	<string>2</string>
+	<key>actions</key>
+	<array>
+		<dict>
+			<key>action</key>
+			<dict>
+				<key>AMAccepts</key>
+				<dict>
+					<key>Container</key>
+					<string>List</string>
+					<key>Optional</key>
+					<true/>
+					<key>Types</key>
+					<array>
+						<string>com.apple.cocoa.string</string>
+					</array>
+				</dict>
+				<key>AMActionVersion</key>
+				<string>2.0.3</string>
+				<key>AMApplication</key>
+				<array>
+					<string>Automator</string>
+				</array>
+				<key>AMParameterProperties</key>
+				<dict>
+					<key>COMMAND_STRING</key>
+					<dict/>
+					<key>CheckedForUserDefaultShell</key>
+					<dict/>
+					<key>inputMethod</key>
+					<dict/>
+					<key>shell</key>
+					<dict/>
+					<key>source</key>
+					<dict/>
+				</dict>
+				<key>AMProvides</key>
+				<dict>
+					<key>Container</key>
+					<string>List</string>
+					<key>Types</key>
+					<array>
+						<string>com.apple.cocoa.string</string>
+					</array>
+				</dict>
+				<key>ActionBundlePath</key>
+				<string>/System/Library/Automator/Run Shell Script.action</string>
+				<key>ActionName</key>
+				<string>Run Shell Script</string>
+				<key>ActionParameters</key>
+				<dict>
+					<key>COMMAND_STRING</key>
+					<string>${xmlEscape(hotkeyScript())}</string>
+					<key>CheckedForUserDefaultShell</key>
+					<true/>
+					<key>inputMethod</key>
+					<integer>0</integer>
+					<key>shell</key>
+					<string>/bin/sh</string>
+					<key>source</key>
+					<string></string>
+				</dict>
+				<key>BundleIdentifier</key>
+				<string>com.apple.RunShellScript</string>
+				<key>CFBundleVersion</key>
+				<string>2.0.3</string>
+				<key>CanShowSelectedItemsWhenRun</key>
+				<false/>
+				<key>CanShowWhenRun</key>
+				<true/>
+				<key>Category</key>
+				<array>
+					<string>AMCategoryUtilities</string>
+				</array>
+				<key>Class Name</key>
+				<string>RunShellScriptAction</string>
+				<key>InputUUID</key>
+				<string>8E425A5A-4E4B-4E4B-8E4B-000000000001</string>
+				<key>OutputUUID</key>
+				<string>8E425A5A-4E4B-4E4B-8E4B-000000000002</string>
+				<key>UUID</key>
+				<string>8E425A5A-4E4B-4E4B-8E4B-000000000003</string>
+				<key>UnlocalizedApplications</key>
+				<array>
+					<string>Automator</string>
+				</array>
+				<key>arguments</key>
+				<dict>
+					<key>0</key>
+					<dict>
+						<key>default value</key>
+						<integer>0</integer>
+						<key>name</key>
+						<string>inputMethod</string>
+						<key>required</key>
+						<string>0</string>
+						<key>type</key>
+						<string>0</string>
+						<key>uuid</key>
+						<string>0</string>
+					</dict>
+					<key>1</key>
+					<dict>
+						<key>default value</key>
+						<string></string>
+						<key>name</key>
+						<string>source</string>
+						<key>required</key>
+						<string>0</string>
+						<key>type</key>
+						<string>0</string>
+						<key>uuid</key>
+						<string>1</string>
+					</dict>
+					<key>2</key>
+					<dict>
+						<key>default value</key>
+						<false/>
+						<key>name</key>
+						<string>CheckedForUserDefaultShell</string>
+						<key>required</key>
+						<string>0</string>
+						<key>type</key>
+						<string>0</string>
+						<key>uuid</key>
+						<string>2</string>
+					</dict>
+					<key>3</key>
+					<dict>
+						<key>default value</key>
+						<string></string>
+						<key>name</key>
+						<string>COMMAND_STRING</string>
+						<key>required</key>
+						<string>0</string>
+						<key>type</key>
+						<string>0</string>
+						<key>uuid</key>
+						<string>3</string>
+					</dict>
+					<key>4</key>
+					<dict>
+						<key>default value</key>
+						<string>/bin/sh</string>
+						<key>name</key>
+						<string>shell</string>
+						<key>required</key>
+						<string>0</string>
+						<key>type</key>
+						<string>0</string>
+						<key>uuid</key>
+						<string>4</string>
+					</dict>
+				</dict>
+				<key>isViewVisible</key>
+				<true/>
+			</dict>
+			<key>isViewVisible</key>
+			<true/>
+		</dict>
+	</array>
+	<key>connectors</key>
+	<dict/>
+	<key>workflowMetaData</key>
+	<dict>
+		<key>serviceInputTypeIdentifier</key>
+		<string>com.apple.Automator.text</string>
+		<key>serviceOutputTypeIdentifier</key>
+		<string>com.apple.Automator.text</string>
+		<key>serviceProcessesInput</key>
+		<integer>0</integer>
+		<key>workflowTypeIdentifier</key>
+		<string>com.apple.Automator.servicesMenu</string>
+	</dict>
+</dict>
+</plist>
+`;
+}
+
+// Best-effort: pre-assign the keyboard shortcut in the pasteboard server's
+// services registry. Harmless if it fails — the user can always set one in
+// System Settings > Keyboard > Keyboard Shortcuts > Services.
+function registerHotkeyShortcut() {
+  if (boolish(process.env.FIXEN_HOTKEY_NO_REGISTER)) return false;
+  const entry = `(null) - ${SERVICE_NAME} - runWorkflowAsService`;
+  const r = spawnSync(
+    "defaults",
+    ["write", "pbs", "NSServicesStatus", "-dict-add", entry,
+      `{ key_equivalent = "${DEFAULT_HOTKEY}"; enabled_context_menu = 1; enabled_services_menu = 1; }`],
+    { encoding: "utf8", timeout: 5000 }
+  );
+  if (r.status !== 0) return false;
+  spawnSync("/System/Library/CoreServices/pbs", ["-update"], { encoding: "utf8", timeout: 10000 });
+  return true;
+}
+
+function cmdHotkey() {
+  if (!IS_WIN && process.platform !== "darwin") {
+    fail("fixen hotkey uses macOS Services; on Linux bind a key to: fixen --polish");
+  }
+  if (IS_WIN) fail("fixen hotkey needs macOS");
+  const contents = path.join(SERVICE_BUNDLE, "Contents");
+  fs.mkdirSync(path.join(contents, "Resources"), { recursive: true });
+  fs.writeFileSync(path.join(contents, "Info.plist"), hotkeyInfoPlist());
+  fs.writeFileSync(path.join(contents, "Resources", "document.wflow"), hotkeyWorkflowPlist());
+  process.stdout.write(`${OUT.green("ok")}    ${OUT.bold("hotkey")}: ${OUT.dim(SERVICE_BUNDLE)}\n`);
+  const bound = registerHotkeyShortcut();
+  if (bound) {
+    process.stdout.write(`${OUT.green("ok")}    shortcut: ${OUT.bold("⌃⌥⌘F")} ${OUT.dim("(select text anywhere, press it, the fix replaces the selection)")}\n`);
+    process.stdout.write(OUT.dim("      change it: System Settings > Keyboard > Keyboard Shortcuts > Services > Text") + "\n");
+  } else {
+    process.stdout.write(OUT.dim("      assign a shortcut: System Settings > Keyboard > Keyboard Shortcuts > Services > Text > Fix with fixen") + "\n");
+  }
+  process.stdout.write(OUT.dim("      first run per app may ask for permission; slow backends make the paste wait a few seconds") + "\n");
 }
 
 // ---------------------------------------------------------------- update
@@ -1551,7 +1846,11 @@ Usage:
       gemini, qwen, opencode, windsurf, goose, crush, cline) so every normal chat
       reply ends with a correction of what you typed; -f targets any other
       tool's global instruction file
-  fixen uninstall                     remove the rule and all pointer lines
+  fixen hotkey                        install the macOS "Fix with fixen" quick
+                                      action: select text in any app, press the
+                                      shortcut (default ⌃⌥⌘F), and the corrected
+                                      text replaces the selection
+  fixen uninstall                     remove the rule, pointer lines, and hotkey
   fixen status                        show where the rule is installed
   fixen update [--check]              upgrade fixen, then rewrite the rule with
                                       the new version (--check: report only)
@@ -1599,6 +1898,7 @@ Environment:
   FIXEN_NOTIFY_ICON         image path shown instead of the notifier's own icon
   FIXEN_NOTIFY_IGNORE_DND   1/true to show banners even in Do Not Disturb
   FIXEN_GUI_NO_OPEN         1/true to start --gui without opening the browser
+  FIXEN_HOTKEY_NO_REGISTER  1/true to skip binding the default ⌃⌥⌘F shortcut
   FIXEN_REGISTRY            npm registry for update (default: registry.npmjs.org)
   FIXEN_UPDATE_CMD          custom upgrade command; must contain {spec} → fixen-cli@latest
   FIXEN_DEBUG               1 to print stack traces on unexpected errors
@@ -1620,6 +1920,7 @@ Examples:
   fixen --gui
   fixen install -t English -e -l Korean
   fixen install -f ~/.someai/INSTRUCTIONS.md
+  fixen hotkey
   fixen update --check`;
 
 // Syntax-highlights HELP for color TTYs: bold section headers, cyan flags,
@@ -1748,6 +2049,7 @@ async function main() {
   // so text such as `fixen status is great` remains correction input.
   const sub = !opts.dashdash && opts.words.length === 1 ? opts.words[0] : undefined;
   if (sub === "install") { cmdInstall(opts); return; }
+  if (sub === "hotkey") { cmdHotkey(); return; }
   if (sub === "uninstall") { cmdUninstall(); return; }
   if (sub === "status") { cmdStatus(); return; }
   if (sub === "update") { await cmdUpdate(opts); return; }

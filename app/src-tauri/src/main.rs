@@ -10,12 +10,28 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use sidecar::{cli_candidates, parse_gui_url, CliCandidate};
-use tauri::menu::{Menu, MenuItem};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
 struct Server {
     child: Mutex<Option<Child>>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum TrayAction {
+    Open,
+    Accessibility,
+    Quit,
+}
+
+fn tray_action(id: &str) -> Option<TrayAction> {
+    match id {
+        "open" => Some(TrayAction::Open),
+        "accessibility" => Some(TrayAction::Accessibility),
+        "quit" => Some(TrayAction::Quit),
+        _ => None,
+    }
 }
 
 #[tauri::command]
@@ -116,6 +132,19 @@ fn toggle_window(app: &tauri::AppHandle) {
     }
 }
 
+fn show_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
+fn open_accessibility_settings() {
+    let _ = Command::new("open")
+        .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+        .spawn();
+}
+
 fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![open_panel])
@@ -141,8 +170,17 @@ fn main() {
                 .skip_taskbar(true)
                 .build()?;
 
-            let quit = MenuItem::with_id(app, "quit", "Quit fixen", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&quit])?;
+            let open = MenuItem::with_id(app, "open", "Open fixen", true, Some("CmdOrCtrl+O"))?;
+            let accessibility = MenuItem::with_id(
+                app,
+                "accessibility",
+                "Accessibility Settings…",
+                true,
+                None::<&str>,
+            )?;
+            let separator = PredefinedMenuItem::separator(app)?;
+            let quit = MenuItem::with_id(app, "quit", "Quit fixen", true, Some("CmdOrCtrl+Q"))?;
+            let menu = Menu::with_items(app, &[&open, &accessibility, &separator, &quit])?;
             // Monochrome template icon: macOS recolors it for light/dark
             // menu bars and the highlighted state, like native menu extras.
             let tray_icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?;
@@ -152,10 +190,11 @@ fn main() {
                 .tooltip("fixen — corrections")
                 .menu(&menu)
                 .show_menu_on_left_click(false)
-                .on_menu_event(|app, event| {
-                    if event.id.as_ref() == "quit" {
-                        app.exit(0);
-                    }
+                .on_menu_event(|app, event| match tray_action(event.id.as_ref()) {
+                    Some(TrayAction::Open) => show_window(app),
+                    Some(TrayAction::Accessibility) => open_accessibility_settings(),
+                    Some(TrayAction::Quit) => app.exit(0),
+                    None => {}
                 })
                 .on_tray_icon_event(|tray, event| {
                     if let TrayIconEvent::Click {
@@ -190,4 +229,20 @@ fn main() {
                 }
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tray_menu_ids_map_to_actions() {
+        assert_eq!(tray_action("open"), Some(TrayAction::Open));
+        assert_eq!(
+            tray_action("accessibility"),
+            Some(TrayAction::Accessibility)
+        );
+        assert_eq!(tray_action("quit"), Some(TrayAction::Quit));
+        assert_eq!(tray_action("unknown"), None);
+    }
 }

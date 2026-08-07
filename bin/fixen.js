@@ -1609,15 +1609,18 @@ function hotkeyWorkflowPlist() {
 // Best-effort: pre-assign the keyboard shortcut in the pasteboard server's
 // services registry. Harmless if it fails — the user can always set one in
 // System Settings > Keyboard > Keyboard Shortcuts > Services.
+// The entry key starts with "(" — unquoted, `defaults` tries to parse it as
+// an old-style plist array and rejects it. Literal double quotes make it a
+// quoted plist string.
+function hotkeyDefaultsArgs() {
+  return ["write", "pbs", "NSServicesStatus", "-dict-add",
+    `"(null) - ${SERVICE_NAME} - runWorkflowAsService"`,
+    `{ key_equivalent = "${DEFAULT_HOTKEY}"; enabled_context_menu = 1; enabled_services_menu = 1; }`];
+}
+
 function registerHotkeyShortcut() {
   if (boolish(process.env.FIXEN_HOTKEY_NO_REGISTER)) return false;
-  const entry = `(null) - ${SERVICE_NAME} - runWorkflowAsService`;
-  const r = spawnSync(
-    "defaults",
-    ["write", "pbs", "NSServicesStatus", "-dict-add", entry,
-      `{ key_equivalent = "${DEFAULT_HOTKEY}"; enabled_context_menu = 1; enabled_services_menu = 1; }`],
-    { encoding: "utf8", timeout: 5000 }
-  );
+  const r = spawnSync("defaults", hotkeyDefaultsArgs(), { encoding: "utf8", timeout: 5000 });
   if (r.status !== 0) return false;
   spawnSync("/System/Library/CoreServices/pbs", ["-update"], { encoding: "utf8", timeout: 10000 });
   return true;
@@ -2224,6 +2227,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  hotkeyDefaultsArgs,
   appendHistory,
   loadHistory,
   deleteHistoryEntry,

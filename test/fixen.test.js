@@ -1102,3 +1102,15 @@ test("hotkey: status reports it and uninstall removes it", { skip: !DARWIN }, ()
   const st2 = run(["status"], home, env);
   assert.doesNotMatch(st2.stdout, /hotkey: on/);
 });
+
+test("hotkey: the pbs entry is old-style-plist quoted so defaults can parse it", () => {
+  const args = fx.hotkeyDefaultsArgs();
+  assert.equal(args[0], "write");
+  assert.equal(args[1], "pbs");
+  assert.equal(args[2], "NSServicesStatus");
+  assert.equal(args[3], "-dict-add");
+  // An unquoted "(null) - ..." key is parsed by `defaults` as a plist array
+  // and rejected; the literal double quotes make it an old-style string.
+  assert.equal(args[4], '"(null) - Fix with fixen - runWorkflowAsService"');
+  assert.match(args[5], /key_equivalent = "\^~@f"/);
+});

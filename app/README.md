@@ -6,7 +6,7 @@ managed child process and shows the dashboard in a compact always-on-top
 panel, one tray click away.
 
 ```
-tray icon (coral proofreader mark)
+tray icon (native monochrome proofreader mark)
 ├─ left click  → toggle the dashboard panel (430x680, always on top)
 └─ right click → Quit fixen (also stops the managed server)
 ```
@@ -44,9 +44,23 @@ open src-tauri/target/release/bundle/macos/fixen.app
 
 Dev loop: `npm run dev`. Rust unit tests: `cargo test` in `src-tauri/`.
 
-## Distribution notes
+## Signing & distribution
 
-The bundle is unsigned. For handing it to other machines you need the usual
-macOS pipeline: Developer ID signing (`codesign`), notarization
-(`notarytool`), and an update channel (Tauri updater or Homebrew cask).
-Local builds run as-is.
+Local builds are **signed** with the Developer ID certificate configured in
+`src-tauri/tauri.conf.json` (`bundle.macOS.signingIdentity`, hardened runtime
+on). `npm run build` therefore produces a bundle that passes
+`codesign --verify --deep --strict` and runs cleanly on this machine and via
+AirDrop/USB to machines that right-click-open once.
+
+For public distribution, **notarization** is still required. Follow the
+lazy-starter-kit release pattern (`.github/workflows/release.yml` there):
+CI holds the Apple ID / team / app-specific password as repository secrets,
+zips the bundle, runs `xcrun notarytool submit --wait`, then staples with
+`xcrun stapler staple`. Wire the same three secrets into this repo's release
+workflow when the first public build ships; the dmg target is already enabled
+in `tauri.conf.json` (`bundle.targets`).
+
+Menubar icon: `icons/tray.png` is a monochrome template image (pure black +
+alpha, rendered from `icons/tray-src.html`); macOS recolors it for light/dark
+menu bars. The app icon set is generated from `icons/icon-src.html` —
+`npx playwright screenshot → npx tauri icon` regenerates everything.

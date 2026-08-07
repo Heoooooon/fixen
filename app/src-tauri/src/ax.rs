@@ -80,7 +80,9 @@ impl Drop for Released {
 
 fn cfstr(s: &str) -> Released {
     let c = std::ffi::CString::new(s).unwrap();
-    Released(unsafe { CFStringCreateWithCString(std::ptr::null(), c.as_ptr(), K_CFSTRING_ENCODING_UTF8) })
+    Released(unsafe {
+        CFStringCreateWithCString(std::ptr::null(), c.as_ptr(), K_CFSTRING_ENCODING_UTF8)
+    })
 }
 
 pub fn trusted() -> bool {
@@ -113,11 +115,18 @@ pub fn caret_anchor() -> Option<(f64, f64)> {
         let range_value = Released(range_value);
 
         let mut range = CFRange::default();
-        if !AXValueGetValue(range_value.0, K_AX_VALUE_CFRANGE, &mut range as *mut _ as *mut c_void) {
+        if !AXValueGetValue(
+            range_value.0,
+            K_AX_VALUE_CFRANGE,
+            &mut range as *mut _ as *mut c_void,
+        ) {
             return None;
         }
         // A zero-length caret still yields bounds for its position.
-        let param = Released(AXValueCreate(K_AX_VALUE_CFRANGE, &range as *const _ as *const c_void));
+        let param = Released(AXValueCreate(
+            K_AX_VALUE_CFRANGE,
+            &range as *const _ as *const c_void,
+        ));
 
         let mut bounds_value: CFTypeRef = std::ptr::null();
         let attr = cfstr("AXBoundsForRange");
@@ -130,7 +139,11 @@ pub fn caret_anchor() -> Option<(f64, f64)> {
         let bounds_value = Released(bounds_value);
 
         let mut rect = CGRect::default();
-        if !AXValueGetValue(bounds_value.0, K_AX_VALUE_CGRECT, &mut rect as *mut _ as *mut c_void) {
+        if !AXValueGetValue(
+            bounds_value.0,
+            K_AX_VALUE_CGRECT,
+            &mut rect as *mut _ as *mut c_void,
+        ) {
             return None;
         }
         if rect.size.width == 0.0 && rect.size.height == 0.0 && rect.origin.x == 0.0 {

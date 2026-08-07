@@ -39,15 +39,24 @@ pub fn cli_candidates(
     if let Some(command) = env_override {
         let mut parts = command.split_whitespace().map(str::to_string);
         if let Some(program) = parts.next() {
-            candidates.push(CliCandidate { program, args: parts.collect() });
+            candidates.push(CliCandidate {
+                program,
+                args: parts.collect(),
+            });
         }
     }
     if let Some(path) = path_fixen {
-        candidates.push(CliCandidate { program: path.display().to_string(), args: Vec::new() });
+        candidates.push(CliCandidate {
+            program: path.display().to_string(),
+            args: Vec::new(),
+        });
     }
     if let Some(dev) = dev_cli {
         if !dev.trim().is_empty() {
-            candidates.push(CliCandidate { program: "node".to_string(), args: vec![dev.to_string()] });
+            candidates.push(CliCandidate {
+                program: "node".to_string(),
+                args: vec![dev.to_string()],
+            });
         }
     }
     candidates

@@ -1,0 +1,6 @@
+{
+  "identifier": "default",
+  "description": "fixen panel and toast windows",
+  "windows": ["main", "toast"],
+  "permissions": ["core:default"]
+}

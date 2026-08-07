@@ -20,6 +20,19 @@ tray icon (coral proofreader mark)
 A candidate that cannot serve `--gui` (an older release) is skipped and the
 next one is tried.
 
+## Correction toasts
+
+While the app is running, every new correction (chat sidecar, hotkey, or a
+plain `fixen` run) pops a small toast near where you are typing for ~6
+seconds; clicking it opens the full panel.
+
+- **Caret-anchored** placement uses the macOS Accessibility API and activates
+  automatically once you grant the app permission: System Settings → Privacy &
+  Security → Accessibility → add/enable `fixen.app`. The app never prompts on
+  its own.
+- Without that permission the toast appears next to the **mouse cursor**
+  instead — no permission needed.
+
 ## Build & run
 
 ```sh

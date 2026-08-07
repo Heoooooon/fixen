@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>fixen</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    margin: 0; height: 100vh; display: grid; place-items: center;
+    background: #fbf8f1; color: #6b6255;
+    font: 14px/1.5 -apple-system, "Apple SD Gothic Neo", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) { body { background: #14120f; color: #8a8072; } }
+  .mark { width: 48px; height: 48px; color: #e0603f; display: block; margin: 0 auto 12px; }
+  .pulse { animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .45; } }
+</style>
+<body>
+  <div class="pulse" role="status">
+    <svg class="mark" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="1" y="1" width="22" height="22" rx="6.5" stroke="currentColor" stroke-width="1.5" opacity=".28"/>
+      <path d="M6 9.5h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" opacity=".38"/>
+      <path d="M6 14.5h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      <path d="M13.6 14.5 16 11.4l2.4 3.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    starting fixen…
+  </div>
+</body>
+</html>

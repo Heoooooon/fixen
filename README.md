@@ -151,6 +151,14 @@ follow-up questions (routed through your configured backend, like `--ask`),
 and delete/clear controls. `FIXEN_SIDECAR_NO_STORE=1` keeps history empty,
 exactly as it does for `--last`.
 
+## Menubar app
+
+Prefer a resident app over a terminal command? The [`app/`](app/) directory
+contains **fixen-app**, a tiny Tauri menubar shell: the fixen mark lives in
+your menu bar, one click opens the history dashboard in an always-on-top
+panel, and quitting it also stops the managed `fixen --gui` server. See
+[app/README.md](app/README.md) for build instructions.
+
 ## Fix anywhere: the global hotkey (macOS)
 
 ```sh

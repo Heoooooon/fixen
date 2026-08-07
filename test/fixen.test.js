@@ -11,8 +11,10 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
+const { pathToFileURL } = require("node:url");
 
 const BIN = path.resolve(__dirname, "..", "bin", "fixen.js");
+const SENPI_EXTENSION = path.resolve(__dirname, "..", "bin", "fixen-senpi-extension.mjs");
 const fx = require(BIN);
 
 function tmpHome() {
@@ -254,6 +256,64 @@ test("install: cline gets its own rule file in the global rules dir", () => {
 
   run(["uninstall"], home);
   assert.ok(!fs.readFileSync(file, "utf8").includes(fx.START_MARK));
+});
+
+test("install: senpi gets a sidecar input extension and uninstall removes it", () => {
+  const home = tmpHome();
+  const extensionDir = path.join(home, ".senpi", "agent", "extensions");
+  fs.mkdirSync(extensionDir, { recursive: true });
+  const installed = path.join(extensionDir, "fixen-history.mjs");
+
+  assert.equal(run(["install"], home).status, 0);
+  const installedSource = fs.readFileSync(installed, "utf8");
+  assert.ok(installedSource.includes(BIN));
+  assert.ok(!installedSource.includes("__FIXEN_CLI_SCRIPT__"));
+
+  assert.equal(run(["uninstall"], home).status, 0);
+  assert.ok(!fs.existsSync(installed));
+});
+
+test("senpi extension queues direct user input but ignores extension input", async () => {
+  const { registerFixenInputHook } = await import(
+    `${pathToFileURL(SENPI_EXTENSION).href}?test=${Date.now()}`
+  );
+  const queued = [];
+  let inputHandler;
+  registerFixenInputHook(
+    {
+      on(event, handler) {
+        if (event === "input") inputHandler = handler;
+      },
+    },
+    (text) => queued.push(text)
+  );
+
+  await inputHandler({ source: "interactive", text: "i are ready" });
+  await inputHandler({ source: "rpc", text: "he go home" });
+  await inputHandler({ source: "extension", text: "generated context" });
+  await inputHandler({ source: "interactive", text: "   " });
+
+  assert.deepEqual(queued, ["i are ready", "he go home"]);
+});
+
+test("senpi extension flushes hook input before resolving", async () => {
+  const { queueFixenPrompt } = await import(
+    `${pathToFileURL(SENPI_EXTENSION).href}?flush=${Date.now()}`
+  );
+  const home = tmpHome();
+  const capture = path.join(home, "stdin.json");
+  const timeoutCapture = path.join(home, "timeout.txt");
+  const cli = path.join(home, "capture-fixen");
+  fs.writeFileSync(
+    cli,
+    `#!/bin/sh\nprintf %s \"$FIXEN_SIDECAR_TIMEOUT\" > \"${timeoutCapture}\"\ncat > \"${capture}\"\n`
+  );
+  fs.chmodSync(cli, 0o755);
+
+  await queueFixenPrompt("fixen ok?", { command: cli, script: null });
+
+  assert.deepEqual(JSON.parse(fs.readFileSync(capture, "utf8")), { prompt: "fixen ok?" });
+  assert.equal(fs.readFileSync(timeoutCapture, "utf8"), "60");
 });
 
 test("status: exits 0 and reports the rule on a clean home", () => {

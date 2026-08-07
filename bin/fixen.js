@@ -1216,6 +1216,9 @@ const RULE_FILE = path.join(path.dirname(CONFIG_PATH), "RULE.md");
 const RULE_FILE_TILDE = RULE_FILE.startsWith(os.homedir()) ? "~" + RULE_FILE.slice(os.homedir().length) : RULE_FILE;
 // Custom targets added via --file are recorded here so uninstall/status find them.
 const MANIFEST_FILE = path.join(path.dirname(CONFIG_PATH), "installed.json");
+const SENPI_EXTENSION_SOURCE = path.join(__dirname, "fixen-senpi-extension.mjs");
+const SENPI_EXTENSION_DIR = path.join(os.homedir(), ".senpi", "agent", "extensions");
+const SENPI_EXTENSION_FILE = path.join(SENPI_EXTENSION_DIR, "fixen-history.mjs");
 
 function target(name, baseParts, fileParts, opts = {}) {
   return {
@@ -1325,6 +1328,16 @@ function cmdInstall(opts) {
   if (installedFiles.length > 0) {
     fs.writeFileSync(MANIFEST_FILE, JSON.stringify({ files: installedFiles }, null, 2) + "\n");
   }
+  if (fs.existsSync(path.dirname(SENPI_EXTENSION_DIR))) {
+    fs.mkdirSync(SENPI_EXTENSION_DIR, { recursive: true });
+    const extension = fs
+      .readFileSync(SENPI_EXTENSION_SOURCE, "utf8")
+      .replace('"__FIXEN_CLI_SCRIPT__"', JSON.stringify(__filename));
+    fs.writeFileSync(SENPI_EXTENSION_FILE, extension);
+    process.stdout.write(
+      `${OUT.green("ok")}    ${OUT.bold("senpi")}: ${SENPI_EXTENSION_FILE} ${OUT.dim("(input sidecar)")}\n`
+    );
+  }
   process.stdout.write(`\nNew chat sessions of the CLIs above will now end replies with a ${OUT.bold(opts.target)} correction.\n`);
   process.stdout.write(OUT.dim(`Using a different AI tool? Point at its global instruction file: fixen install -f <path>`) + "\n");
 }
@@ -1350,6 +1363,10 @@ function cmdUninstall() {
       fs.rmSync(f);
       process.stdout.write(`${OUT.green("ok")}    removed: ${OUT.dim(f)}\n`);
     }
+  }
+  if (fs.existsSync(SENPI_EXTENSION_FILE)) {
+    fs.rmSync(SENPI_EXTENSION_FILE);
+    process.stdout.write(`${OUT.green("ok")}    ${OUT.bold("senpi")}: removed\n`);
   }
   if (fs.existsSync(SERVICE_BUNDLE)) {
     fs.rmSync(SERVICE_BUNDLE, { recursive: true, force: true });

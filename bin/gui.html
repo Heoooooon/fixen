@@ -500,6 +500,114 @@ button { background: none; border: 0; margin: 0; padding: 0; cursor: pointer; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
 }
+
+/* Compact right-side menubar panel. Activated only by the private macOS app. */
+html[data-menubar="true"], html[data-menubar="true"] body {
+  width: 100%; height: 100%; overflow: hidden;
+  background: transparent; background-image: none;
+}
+html[data-menubar="true"] body {
+  padding: 8px;
+  color: #f7f2ff;
+}
+html[data-menubar="true"] .shell {
+  position: relative; height: calc(100vh - 16px); max-width: none;
+  overflow-x: hidden; overflow-y: auto;
+  padding: 0 14px 18px;
+  border: 1px solid rgba(222, 196, 255, .24);
+  border-radius: 17px;
+  background:
+    radial-gradient(circle at 80% 5%, rgba(149, 72, 255, .55), transparent 34%),
+    linear-gradient(150deg, #32105f 0%, #491287 48%, #240744 100%);
+  box-shadow: 0 18px 54px rgba(0, 0, 0, .44), inset 0 1px rgba(255,255,255,.12);
+  overscroll-behavior: contain;
+}
+html[data-menubar="true"] .shell::-webkit-scrollbar { width: 5px; }
+html[data-menubar="true"] .shell::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,.2); border-radius: 5px;
+}
+html[data-menubar="true"] .banner {
+  position: fixed; left: 16px; right: 16px; top: 16px; border-radius: 10px;
+}
+html[data-menubar="true"] .banner-hint { display: none; }
+html[data-menubar="true"] .masthead {
+  align-items: center; padding: 17px 1px 12px; gap: 9px;
+}
+html[data-menubar="true"] .mark { width: 29px; height: 29px; color: #ffb6f8; }
+html[data-menubar="true"] .wordmark { font-size: 21px; color: #fff; }
+html[data-menubar="true"] .wordmark::after { background: #f0a8ff; }
+html[data-menubar="true"] .tagline,
+html[data-menubar="true"] #count-badge { display: none; }
+html[data-menubar="true"] .masthead-meta { margin-left: auto; width: auto; }
+html[data-menubar="true"] .badge {
+  padding: 3px 8px; border-color: rgba(255,255,255,.18);
+  background: rgba(15, 3, 32, .26); color: #e9d9ff; font-size: 10px;
+}
+html[data-menubar="true"] #clear-all {
+  display: inline-flex; padding: 5px 8px; border-color: rgba(255,255,255,.18);
+  background: rgba(15, 3, 32, .26); color: #e9d9ff; font-size: 11px;
+}
+html[data-menubar="true"] .masthead-rule {
+  margin-bottom: 12px; background: rgba(255,255,255,.16);
+}
+html[data-menubar="true"] .composer {
+  margin-bottom: 14px; padding: 13px; border: 1px solid rgba(255,255,255,.13);
+  border-radius: 13px; background: rgba(13, 3, 30, .25); box-shadow: none;
+}
+html[data-menubar="true"] .composer-head { margin-bottom: 9px; }
+html[data-menubar="true"] .composer-title { color: #fff; font-size: 14px; }
+html[data-menubar="true"] .composer-shortcut {
+  color: #d8c2f3; background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.14);
+}
+html[data-menubar="true"] .composer-input {
+  min-height: 78px; max-height: 160px; padding: 9px 11px;
+  border-color: rgba(255,255,255,.14); border-radius: 9px;
+  background: rgba(8, 2, 20, .32); color: #fff;
+}
+html[data-menubar="true"] .composer-input::placeholder { color: #bba9cf; }
+html[data-menubar="true"] .composer-controls { margin-top: 9px; }
+html[data-menubar="true"] .composer-target {
+  max-width: 184px; border-color: rgba(255,255,255,.14);
+  background: #33125d; color: #eadcff;
+}
+html[data-menubar="true"] .composer-submit {
+  padding: 8px 14px; background: linear-gradient(135deg, #d348ff, #8e4dff);
+  box-shadow: 0 4px 14px rgba(151, 62, 255, .32);
+}
+html[data-menubar="true"] .composer-result { border-color: rgba(255,255,255,.14); }
+html[data-menubar="true"] .composer-corrected {
+  background: rgba(88, 255, 185, .12); color: #9cffd1;
+}
+html[data-menubar="true"] .composer-copy,
+html[data-menubar="true"] .composer-notes { color: #ddccef; }
+html[data-menubar="true"] .timeline { gap: 9px; padding-bottom: 2px; }
+html[data-menubar="true"] .timeline[data-populated="true"]::before,
+html[data-menubar="true"] .entry-node { display: none; }
+html[data-menubar="true"] .entry { padding-left: 0; }
+html[data-menubar="true"] .entry-when {
+  position: static; display: block; width: auto; margin: 0 0 4px 3px;
+  text-align: left; color: #bda9d1;
+}
+html[data-menubar="true"] .card {
+  padding: 12px; border-color: rgba(255,255,255,.12);
+  border-radius: 12px; background: rgba(15, 4, 34, .28); box-shadow: none;
+}
+html[data-menubar="true"] .card:hover { transform: none; box-shadow: none; }
+html[data-menubar="true"] .card-actions { opacity: 1; }
+html[data-menubar="true"] .line { grid-template-columns: 33px 1fr; gap: 7px; }
+html[data-menubar="true"] .line-body { color: #f4eaff; }
+html[data-menubar="true"] .line-tag,
+html[data-menubar="true"] .card-lang,
+html[data-menubar="true"] .notes { color: #cbb7df; }
+html[data-menubar="true"] .ins { color: #9cffd1; background: rgba(88,255,185,.1); }
+html[data-menubar="true"] .del { color: #ffb5c3; background: rgba(255,99,139,.11); }
+html[data-menubar="true"] .card-foot { border-color: rgba(255,255,255,.1); }
+html[data-menubar="true"] .icon-btn { color: #d9c6eb; }
+html[data-menubar="true"] .empty { padding: 28px 10px; }
+html[data-menubar="true"] .empty svg { width: 100px; height: 78px; }
+html[data-menubar="true"] .empty h2 { margin-top: 12px; color: #fff; }
+html[data-menubar="true"] .empty p,
+html[data-menubar="true"] .footnote { display: none; }
 </style>
 </head>
 <body>
@@ -602,6 +710,9 @@ button { background: none; border: 0; margin: 0; padding: 0; cursor: pointer; }
 <script>
 "use strict";
 (function () {
+  var MENUBAR = new URLSearchParams(location.search).get("mode") === "menubar";
+  if (MENUBAR) document.documentElement.setAttribute("data-menubar", "true");
+
   /* ======================================================================
      word diff — ported from bin/fixen.js (wordTokens + diffRuns) so the GUI
      highlights exactly what the CLI's notification headline reports.

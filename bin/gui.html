@@ -440,6 +440,15 @@ button { background: none; border: 0; margin: 0; padding: 0; cursor: pointer; }
   padding: 8px 30px 8px 10px; border: 1px solid var(--rule); border-radius: var(--radius-sm);
   background: var(--surface); color: var(--muted); font-size: var(--text-sm);
 }
+.model-controls {
+  display: grid; grid-template-columns: minmax(0, 1fr) 108px;
+  gap: var(--space-2); margin-top: var(--space-2);
+}
+.composer-model, .composer-reasoning {
+  min-width: 0; padding: 8px 28px 8px 10px;
+  border: 1px solid var(--rule); border-radius: var(--radius-sm);
+  background: var(--surface); color: var(--muted); font-size: var(--text-sm);
+}
 .composer-submit {
   margin-left: auto; display: inline-flex; align-items: center; gap: var(--space-2);
   padding: 9px var(--space-4); border-radius: var(--radius-sm); background: var(--accent);
@@ -570,6 +579,10 @@ html[data-menubar="true"] .composer-target {
   max-width: 184px; border-color: rgba(255,255,255,.14);
   background: #33125d; color: #eadcff;
 }
+html[data-menubar="true"] .composer-model,
+html[data-menubar="true"] .composer-reasoning {
+  border-color: rgba(255,255,255,.14); background: #33125d; color: #eadcff;
+}
 html[data-menubar="true"] .composer-submit {
   padding: 8px 14px; background: linear-gradient(135deg, #d348ff, #8e4dff);
   box-shadow: 0 4px 14px rgba(151, 62, 255, .32);
@@ -667,6 +680,20 @@ html[data-menubar="true"] .footnote { display: none; }
           <option value="Korean">Korean</option>
         </select>
         <button class="composer-submit" id="composer-submit" type="submit">Correct</button>
+      </div>
+      <div class="model-controls">
+        <label class="sr-only" for="composer-model">Model</label>
+        <select class="composer-model" id="composer-model">
+          <option value="">Loading models…</option>
+        </select>
+        <label class="sr-only" for="composer-reasoning">Reasoning</label>
+        <select class="composer-reasoning" id="composer-reasoning">
+          <option value="">Default</option>
+          <option value="minimal">Minimal</option>
+          <option value="low">Low</option>
+          <option value="medium">Medium</option>
+          <option value="high">High</option>
+        </select>
       </div>
     </form>
     <div class="composer-error" id="composer-error" role="alert" hidden></div>
@@ -907,6 +934,8 @@ html[data-menubar="true"] .footnote { display: none; }
   var composerForm = document.getElementById("composer-form");
   var composerInput = document.getElementById("composer-input");
   var composerTarget = document.getElementById("composer-target");
+  var composerModel = document.getElementById("composer-model");
+  var composerReasoning = document.getElementById("composer-reasoning");
   var composerSubmit = document.getElementById("composer-submit");
   var composerError = document.getElementById("composer-error");
   var composerResult = document.getElementById("composer-result");
@@ -919,6 +948,9 @@ html[data-menubar="true"] .footnote { display: none; }
   var lastDraftId = null;
   var lastCorrected = "";
   var composerTargetInitialized = false;
+  var composerModelInitialized = false;
+  var modelEntries = Object.create(null);
+  var settingsSaveTimer = null;
   var seenIds = Object.create(null);
   var threads = Object.create(null);   // id -> [{role, text}]
   var openAsk = Object.create(null);   // id -> bool
@@ -1091,6 +1123,32 @@ html[data-menubar="true"] .footnote { display: none; }
       composerTarget.value = state.target;
       composerTargetInitialized = true;
     }
+    if (!composerModelInitialized && state && Array.isArray(state.models)) {
+      composerModel.textContent = "";
+      modelEntries = Object.create(null);
+      var groups = Object.create(null);
+      for (var mi = 0; mi < state.models.length; mi++) {
+        var model = state.models[mi];
+        if (!model || !model.id || !model.backend) continue;
+        var key = model.backend + "\n" + model.id;
+        modelEntries[key] = model;
+        var groupName = model.backend === "gjc" ? ("GJC · " + (model.provider || "models")) : model.backend;
+        if (!groups[groupName]) {
+          groups[groupName] = document.createElement("optgroup");
+          groups[groupName].label = groupName;
+          composerModel.appendChild(groups[groupName]);
+        }
+        var option = document.createElement("option");
+        option.value = key;
+        option.textContent = model.label || model.id;
+        groups[groupName].appendChild(option);
+      }
+      var selectedKey = (state.backend || "") + "\n" + (state.model || "");
+      if (modelEntries[selectedKey]) composerModel.value = selectedKey;
+      else if (composerModel.options.length) composerModel.selectedIndex = 0;
+      composerReasoning.value = state.reasoning || "";
+      composerModelInitialized = true;
+    }
     if (state && state.draft && state.draft.id && state.draft.id !== lastDraftId) {
       lastDraftId = state.draft.id;
       composerInput.value = state.draft.text || "";
@@ -1138,6 +1196,29 @@ html[data-menubar="true"] .footnote { display: none; }
     composerSubmit.textContent = busyNow ? "Correcting…" : "Correct";
   }
 
+  function selectedModel() {
+    return modelEntries[composerModel.value] || null;
+  }
+
+  function saveModelSettings() {
+    var model = selectedModel();
+    if (!model) return;
+    clearTimeout(settingsSaveTimer);
+    settingsSaveTimer = setTimeout(function () {
+      post("/api/settings", {
+        backend: model.backend,
+        model: model.id,
+        reasoning: composerReasoning.value
+      }).catch(function (err) {
+        composerError.textContent = err.message || "Could not save model.";
+        composerError.hidden = false;
+      });
+    }, 120);
+  }
+
+  composerModel.addEventListener("change", saveModelSettings);
+  composerReasoning.addEventListener("change", saveModelSettings);
+
   function showComposerResult(data) {
     lastCorrected = (data && data.corrected) || "";
     composerCorrected.textContent = lastCorrected;
@@ -1160,7 +1241,14 @@ html[data-menubar="true"] .footnote { display: none; }
     }
     setComposerBusy(true);
     composerError.hidden = true;
-    post("/api/correct", { text: text, target: composerTarget.value }).then(function (data) {
+    var model = selectedModel();
+    post("/api/correct", {
+      text: text,
+      target: composerTarget.value,
+      backend: model && model.backend,
+      model: model && model.id,
+      reasoning: composerReasoning.value
+    }).then(function (data) {
       showComposerResult(data);
       poll(true);
     }).catch(function (err) {

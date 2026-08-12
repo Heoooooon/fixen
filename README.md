@@ -9,7 +9,7 @@
 ![node](https://img.shields.io/badge/node-%E2%89%A518-brightgreen)
 ![deps](https://img.shields.io/badge/dependencies-0-orange)
 
-You already talk to an LLM all day. `fixen` turns it into your personal proofreader: one tiny zero-dependency CLI that builds a correction prompt and pipes it into whatever is on your machine — `claude`, `codex`, `gjc`, `gemini`, `ollama`, any OpenAI-compatible API, or any shell command that reads a prompt and prints an answer. No accounts, no API keys (unless you want one), no vendor lock-in.
+You already talk to an LLM all day. `fixen` turns it into your personal proofreader: one tiny zero-dependency CLI that builds a correction prompt and pipes it into whatever is on your machine — `claude`, `codex`, `gjc`, `gemini`, `ollama`, any OpenAI-compatible API, OpenAI's reasoning models such as `gpt-5.6-pro`, or any shell command that reads a prompt and prints an answer. No accounts, no API keys (unless you want one), no vendor lock-in.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/Heoooooon/fixen/main/assets/demo.gif" alt="fixen demo: correcting English with explanations in Korean, and Japanese with -t" width="860">
@@ -154,7 +154,8 @@ The page is a single zero-dependency HTML file served only on `127.0.0.1`.
 Each launch generates an unguessable URL token, and every API request must
 present it, preventing unrelated web pages from reading or mutating history:
 it includes a manual English/Korean correction box (submit with
-`Cmd/Ctrl+Enter`) and a timeline with word-level diff highlighting, the reasons
+`Cmd/Ctrl+Enter`), a GJC-backed model/reasoning selector, and a timeline with
+word-level diff highlighting, the reasons
 for each fix, one-click copy of the corrected sentence, per-correction
 follow-up questions (routed through your configured backend, like `--ask`),
 and delete/clear controls.
@@ -190,10 +191,11 @@ Auto-detected in this order: `claude` → `codex` → `gjc` → `gemini` → `ol
 | -------- | ------------------------------------------- |
 | `claude` | `claude -p` (Claude Code)                   |
 | `codex`  | `codex exec` (OpenAI Codex CLI)             |
-| `gjc`    | `gjc -p` (Gajae Code)                       |
+| `gjc`    | `gjc -p --no-tools` with selectable GJC models |
 | `gemini` | `gemini -p` (Gemini CLI)                    |
 | `ollama` | `ollama run <model>` — local, offline       |
 | `api`    | any OpenAI-compatible `/chat/completions`   |
+| `openai` | OpenAI `/responses` — reasoning models       |
 
 ### Custom command
 
@@ -213,15 +215,37 @@ export FIXEN_MODEL=gpt-4o-mini
 fixen -b api "sentence"
 ```
 
+### OpenAI reasoning models (gpt-5.6-pro)
+
+The `pro` tiers are served only by OpenAI's `/responses` endpoint and reject the
+sampling parameters `/chat/completions` takes, so they get their own backend:
+
+```sh
+export FIXEN_API_KEY=sk-...
+fixen -b openai -m gpt-5.6-pro "its a beautiful day"
+fixen -b openai -m gpt-5.6-pro -r high --polish "sorry for late reply"
+```
+
+`-m` is required — a pro tier costs far more than a mini one, so fixen never
+picks it for you. `-r/--reasoning` (`none|minimal|low|medium|high`) is optional
+and left to the model's own default when unset. Requests are sent with
+`store: false`, so your prose is not retained in the OpenAI dashboard.
+
+Reasoning models think before answering, so this backend waits 600 seconds by
+default (`FIXEN_API_TIMEOUT` overrides it). That is fine for one-shot, `--polish`,
+the hotkey, and the dashboard. The chat sidecar (`--hook` / `--notify`) still cuts
+workers off after `FIXEN_SIDECAR_TIMEOUT` seconds — 8 by default, up to 600 — so
+raise it before pointing the sidecar at a pro model.
+
 ## Configuration
 
 Defaults live in `~/.config/fixen/config.json`:
 
 ```json
-{ "backend": "claude", "model": null, "command": null, "lang": "Korean", "target": "English", "explain": true }
+{ "backend": "claude", "model": null, "reasoning": null, "command": null, "lang": "Korean", "target": "English", "explain": true }
 ```
 
-Environment variables `FIXEN_BACKEND`, `FIXEN_BACKEND_CMD`, `FIXEN_TARGET`, `FIXEN_LANG`, `FIXEN_EXPLAIN`, `FIXEN_MODEL`, `FIXEN_API_URL`, `FIXEN_API_KEY` override the config; CLI flags override everything (`--no-explain` turns off a config-enabled `explain` for one run). A failed backend attempt is retried once; tune with `FIXEN_RETRIES` (0 disables retries). `FIXEN_BACKEND_TIMEOUT` bounds CLI/custom backends. Detached notification workers set both backend and API deadlines from a validated `FIXEN_SIDECAR_TIMEOUT` (8 seconds by default), and terminate the full POSIX process group when that deadline expires.
+Environment variables `FIXEN_BACKEND`, `FIXEN_BACKEND_CMD`, `FIXEN_TARGET`, `FIXEN_LANG`, `FIXEN_EXPLAIN`, `FIXEN_MODEL`, `FIXEN_REASONING`, `FIXEN_API_URL`, `FIXEN_API_KEY` override the config; CLI flags override everything (`--no-explain` turns off a config-enabled `explain` for one run). A failed backend attempt is retried once; tune with `FIXEN_RETRIES` (0 disables retries). `FIXEN_BACKEND_TIMEOUT` bounds CLI/custom backends. Detached notification workers set both backend and API deadlines from a validated `FIXEN_SIDECAR_TIMEOUT` (8 seconds by default, 600 maximum), and terminate the full POSIX process group when that deadline expires.
 
 ## Why fixen
 

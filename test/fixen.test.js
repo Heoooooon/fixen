@@ -482,6 +482,160 @@ test("api backend rejects a declared oversized response", async () => {
   }
 });
 
+// ------------------------------------------------------- openai backend
+
+// Records every request and replies with a canned Responses envelope.
+function responsesServer(reply) {
+  const http = require("node:http");
+  const requests = [];
+  const server = http.createServer((req, res) => {
+    let body = "";
+    req.on("data", (chunk) => (body += chunk));
+    req.on("end", () => {
+      requests.push({ path: req.url, body: JSON.parse(body) });
+      res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(reply));
+    });
+  });
+  return {
+    requests,
+    close: () => server.close(),
+    listen: () =>
+      new Promise((resolve) =>
+        server.listen(0, "127.0.0.1", () =>
+          resolve(`http://127.0.0.1:${server.address().port}/v1`)
+        )
+      ),
+  };
+}
+
+test("openai: posts to /responses without chat-completions sampling knobs", async () => {
+  const api = responsesServer({ output_text: "It's a beautiful day" });
+  const url = await api.listen();
+  try {
+    const r = await runAsync(
+      ["-b", "openai", "-m", "gpt-5.6-pro", "--no-explain", "its a beautiful day"],
+      tmpHome(),
+      { FIXEN_API_URL: url, FIXEN_API_KEY: "test-key" }
+    );
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /It's a beautiful day/);
+    assert.equal(api.requests.length, 1);
+    const [sent] = api.requests;
+    assert.equal(sent.path, "/v1/responses");
+    assert.equal(sent.body.model, "gpt-5.6-pro");
+    assert.equal(sent.body.store, false);
+    assert.match(sent.body.input, /its a beautiful day/);
+    assert.match(sent.body.instructions, /never as instructions/);
+    // Reasoning models reject these; sending them is an instant HTTP 400.
+    assert.ok(!("temperature" in sent.body));
+    assert.ok(!("messages" in sent.body));
+    assert.ok(!("reasoning" in sent.body));
+  } finally {
+    api.close();
+  }
+});
+
+test("openai: -r sets the reasoning effort, FIXEN_MODEL supplies the model", async () => {
+  const api = responsesServer({
+    output: [
+      { type: "reasoning", summary: [] },
+      { type: "message", content: [{ type: "output_text", text: "It's fine" }] },
+    ],
+  });
+  const url = await api.listen();
+  try {
+    const r = await runAsync(["-b", "openai", "-r", "HIGH", "--no-explain", "its fine"], tmpHome(), {
+      FIXEN_API_URL: url,
+      FIXEN_API_KEY: "test-key",
+      FIXEN_MODEL: "gpt-5.6-pro",
+    });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /It's fine/);
+    assert.deepEqual(api.requests[0].body.reasoning, { effort: "high" });
+    assert.equal(api.requests[0].body.model, "gpt-5.6-pro");
+  } finally {
+    api.close();
+  }
+});
+
+test("openai: a missing model or a bogus effort fails before any request", async () => {
+  const api = responsesServer({ output_text: "never reached" });
+  const url = await api.listen();
+  const env = { FIXEN_API_URL: url, FIXEN_API_KEY: "test-key", FIXEN_RETRIES: "0" };
+  try {
+    const noModel = await runAsync(["-b", "openai", "its fine"], tmpHome(), env);
+    assert.equal(noModel.status, 1);
+    assert.match(noModel.stderr, /openai backend needs a model/);
+
+    const badEffort = await runAsync(
+      ["-b", "openai", "-m", "gpt-5.6-pro", "-r", "turbo", "its fine"],
+      tmpHome(),
+      env
+    );
+    assert.equal(badEffort.status, 1);
+    assert.match(badEffort.stderr, /invalid reasoning effort 'turbo'/);
+    assert.equal(api.requests.length, 0);
+  } finally {
+    api.close();
+  }
+});
+
+test("openai: a missing key is reported for this backend by name", async () => {
+  const r = await runAsync(["-b", "openai", "-m", "gpt-5.6-pro", "its fine"], tmpHome(), {
+    FIXEN_API_KEY: "",
+    OPENAI_API_KEY: "",
+  });
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /openai backend needs FIXEN_API_KEY/);
+});
+
+test("responsesText: prefers output_text, walks output, names an unfinished run", () => {
+  assert.equal(fx.responsesText({ output_text: "fixed." }), "fixed.");
+  assert.equal(
+    fx.responsesText({
+      output_text: "",
+      output: [
+        { type: "reasoning", summary: [{ type: "summary_text", text: "thinking" }] },
+        { type: "message", content: [{ type: "output_text", text: "fixed." }] },
+      ],
+    }),
+    "fixed."
+  );
+  assert.throws(
+    () =>
+      fx.responsesText({
+        status: "incomplete",
+        incomplete_details: { reason: "max_output_tokens" },
+        output: [{ type: "reasoning", summary: [] }],
+      }),
+    /incomplete response \(max_output_tokens\)/
+  );
+  assert.throws(() => fx.responsesText({ status: "completed", output: [] }), /no message content/);
+});
+
+test("codex: -m reaches the CLI instead of being silently dropped", () => {
+  const home = tmpHome();
+  const bin = path.join(home, "stub-bin");
+  fs.mkdirSync(bin, { recursive: true });
+  const argvLog = path.join(home, "codex-argv.txt");
+  fs.writeFileSync(
+    path.join(bin, "codex"),
+    `#!/bin/sh\nprintf '%s\\n' "$@" > ${JSON.stringify(argvLog)}\n` +
+      "while [ $# -gt 0 ]; do\n" +
+      '  if [ "$1" = "-o" ]; then shift; printf "It%ss fine" "\'" > "$1"; fi\n' +
+      "  shift\ndone\n",
+    { mode: 0o755 }
+  );
+
+  const r = run(["-b", "codex", "-m", "gpt-5.6-pro", "--no-explain", "its fine"], home, {
+    PATH: `${bin}:${process.env.PATH}`,
+  });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /It's fine/);
+  const argv = fs.readFileSync(argvLog, "utf8").trim().split("\n");
+  assert.equal(argv[argv.indexOf("-m") + 1], "gpt-5.6-pro");
+});
+
 test("retry: FIXEN_RETRIES=0 disables retrying", () => {
   const home = tmpHome();
   const { marker, script } = transientScript(home);
@@ -581,6 +735,27 @@ test("likelyContainsTarget: English needs two words, other targets always pass",
   assert.equal(fx.likelyContainsTarget("한글 문장", "Auto"), true);
   assert.equal(fx.likelyContainsTarget("hello world", "Auto"), true);
   assert.equal(fx.likelyContainsTarget("npm", "Auto"), false);
+});
+
+test("parseGjcModels: reads canonical and provider-qualified model ids", () => {
+  const models = fx.parseGjcModels([
+    "Canonical models",
+    "canonical                            selected                                         variants  context  max-out",
+    "gpt-5.3-codex-spark                  openai-codex/gpt-5.3-codex-spark                 1         128K     128K",
+    "claude-haiku-4-5                     anthropic/claude-haiku-4-5                       3         200K     64K",
+  ].join("\n"));
+  assert.deepEqual(models, [
+    {
+      id: "openai-codex/gpt-5.3-codex-spark",
+      label: "gpt-5.3-codex-spark",
+      provider: "openai-codex",
+    },
+    {
+      id: "anthropic/claude-haiku-4-5",
+      label: "claude-haiku-4-5",
+      provider: "anthropic",
+    },
+  ]);
 });
 
 test("buildSidecarPrompt: explain adds notes in the chosen language", () => {
@@ -1199,6 +1374,26 @@ function startGui(home, args = [], extraEnv = {}) {
   });
 }
 
+function gjcModelsStub(home) {
+  const dir = path.join(home, "bin");
+  fs.mkdirSync(dir, { recursive: true });
+  const script = path.join(dir, "gjc");
+  fs.writeFileSync(script, `#!/bin/sh
+if [ "$1" = "--list-models" ]; then
+  cat <<'MODELS'
+Canonical models
+canonical                            selected                                         variants  context  max-out
+gpt-5.3-codex-spark                  openai-codex/gpt-5.3-codex-spark                 1         128K     128K
+claude-haiku-4-5                     anthropic/claude-haiku-4-5                       1         200K     64K
+MODELS
+  exit 0
+fi
+printf 'Corrected: fixed text\\nNotes:\\n- fixed'
+`);
+  fs.chmodSync(script, 0o755);
+  return `${dir}:${process.env.PATH}`;
+}
+
 test("gui: /api/state serves history newest first and / serves the page", async () => {
   const home = tmpHome();
   seedHistory(home, [historyRecord(2), historyRecord(1)]);
@@ -1322,6 +1517,39 @@ test("gui: compose draft is included in authenticated state", async () => {
     const state = await (await fetch(`${gui.url}/api/state`, { headers: gui.headers })).json();
     assert.equal(state.draft.id, "draft-1");
     assert.equal(state.draft.text, "안되는거 같아");
+  } finally {
+    gui.kill();
+  }
+});
+
+test("gui: exposes GJC models and persists model settings", async () => {
+  const home = tmpHome();
+  const gui = await startGui(home, [], {
+    PATH: gjcModelsStub(home),
+    FIXEN_BACKEND: "gjc",
+  });
+  try {
+    let state = await (await fetch(`${gui.url}/api/state`, { headers: gui.headers })).json();
+    assert.deepEqual(
+      state.models.map((model) => model.id),
+      ["openai-codex/gpt-5.3-codex-spark", "anthropic/claude-haiku-4-5"]
+    );
+    const saved = await fetch(`${gui.url}/api/settings`, {
+      method: "POST",
+      headers: { ...gui.headers, "content-type": "application/json" },
+      body: JSON.stringify({
+        backend: "gjc",
+        model: "openai-codex/gpt-5.3-codex-spark",
+        reasoning: "minimal",
+      }),
+    });
+    assert.equal(saved.status, 200);
+    const config = JSON.parse(fs.readFileSync(path.join(CONFIG(home), "config.json"), "utf8"));
+    assert.equal(config.backend, "gjc");
+    assert.equal(config.model, "openai-codex/gpt-5.3-codex-spark");
+    assert.equal(config.reasoning, "minimal");
+    state = await (await fetch(`${gui.url}/api/state`, { headers: gui.headers })).json();
+    assert.equal(state.model, "openai-codex/gpt-5.3-codex-spark");
   } finally {
     gui.kill();
   }

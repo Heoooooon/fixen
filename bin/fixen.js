@@ -29,6 +29,8 @@ const APP_PRESENCE_FILE = path.join(CONFIG_DIR, "app.pid");
 const COMPOSE_FILE = path.join(CONFIG_DIR, "compose.json");
 const GUI_MODE_FILE = path.join(CONFIG_DIR, "gui-mode");
 const JOB_DIR = path.join(CONFIG_DIR, "jobs");
+const MODEL_CATALOG_TTL_MS = 5 * 60 * 1000;
+let modelCatalogCache;
 
 function atomicWriteFile(file, content, mode = 0o600) {
   let target = file;
@@ -157,6 +159,16 @@ function loadConfig() {
     );
     return {};
   }
+}
+
+function updateConfig(patch) {
+  const current = loadConfig();
+  const next = { ...current, ...patch };
+  for (const [key, value] of Object.entries(next)) {
+    if (value === undefined || value === null || value === "") delete next[key];
+  }
+  atomicWriteFile(CONFIG_PATH, JSON.stringify(next, null, 2) + "\n");
+  return next;
 }
 
 // Truthiness for values that arrive as JSON booleans (config) or strings
@@ -364,8 +376,13 @@ const BACKENDS = {
     return runArgv(["claude", "-p", ...(model ? ["--model", model] : [])], { stdin: prompt });
   },
 
-  gjc(prompt) {
-    return runArgv(["gjc", "-p"], { stdin: prompt });
+  gjc(prompt, { model, reasoning }) {
+    return runArgv([
+      "gjc", "-p", "--no-tools",
+      "--system-prompt", API_INSTRUCTIONS,
+      ...(model ? ["--model", model] : []),
+      ...(reasoning ? ["--thinking", reasoning] : []),
+    ], { stdin: prompt });
   },
 
   async codex(prompt, { model }) {
@@ -560,6 +577,46 @@ function detectBackend() {
   }
   if (process.env.FIXEN_API_KEY || process.env.OPENAI_API_KEY) return "api";
   return null;
+}
+
+function parseGjcModels(output) {
+  const models = [];
+  for (const line of String(output).split("\n")) {
+    const match = line.match(/^(\S+)\s+(\S+)\s+\d+\s+\S+\s+\S+\s*$/);
+    if (!match || match[1] === "canonical") continue;
+    models.push({
+      id: match[2],
+      label: match[1],
+      provider: match[2].split("/")[0],
+    });
+  }
+  return models;
+}
+
+async function availableModels(opts) {
+  const now = Date.now();
+  if (modelCatalogCache && now - modelCatalogCache.loadedAt < MODEL_CATALOG_TTL_MS) {
+    return modelCatalogCache.models;
+  }
+  const models = [];
+  if (which("gjc")) {
+    try {
+      const output = await runArgv(["gjc", "--list-models"], {
+        env: { ...process.env, FIXEN_BACKEND_TIMEOUT: "15" },
+      });
+      for (const model of parseGjcModels(output)) models.push({ ...model, backend: "gjc" });
+    } catch {}
+  }
+  if (opts.backend && opts.backend !== "gjc" && opts.model) {
+    models.unshift({
+      id: opts.model,
+      label: opts.model,
+      provider: opts.backend,
+      backend: opts.backend,
+    });
+  }
+  modelCatalogCache = { loadedAt: now, models };
+  return models;
 }
 
 // ---------------------------------------------------------------- retry
@@ -1526,10 +1583,15 @@ async function handleGuiRequest(req, res, opts) {
       "cache-control": "no-store",
       etag,
     });
+    const models = await availableModels(opts);
     res.end(JSON.stringify({
       version: VERSION,
       target: opts.target,
       lang: opts.lang,
+      backend: opts.backend,
+      model: opts.model || "",
+      reasoning: opts.reasoning || "",
+      models,
       history: loadHistory(),
       draft: loadComposeDraft(),
     }));
@@ -1583,7 +1645,24 @@ async function handleGuiRequest(req, res, opts) {
         if (!["Auto", "English", "Korean"].includes(target)) {
           return sendJson(400, { error: "target must be Auto, English, or Korean" });
         }
-        const manualOpts = { ...opts, target, explain: true };
+        const requestedBackend = typeof body.backend === "string" ? body.backend.trim() : "";
+        const requestedModel = typeof body.model === "string" ? body.model.trim() : "";
+        const catalog = await availableModels(opts);
+        const selected = requestedModel
+          ? catalog.find((entry) => entry.id === requestedModel && (!requestedBackend || entry.backend === requestedBackend))
+          : null;
+        if (requestedModel && !selected) {
+          return sendJson(400, { error: "selected model is not available" });
+        }
+        const reasoning = reasoningEffort(body.reasoning);
+        const manualOpts = {
+          ...opts,
+          backend: selected?.backend || requestedBackend || opts.backend,
+          model: selected?.id || requestedModel || opts.model,
+          reasoning: reasoning || opts.reasoning,
+          target,
+          explain: true,
+        };
         const output = await correct(text, manualOpts);
         const parsed = finalizeCorrection(text, output, manualOpts);
         return sendJson(200, {
@@ -1591,6 +1670,32 @@ async function handleGuiRequest(req, res, opts) {
           corrected: parsed.corrected,
           notes: parsed.notes,
           target: resolvedTarget(text, target),
+          backend: manualOpts.backend,
+          model: manualOpts.model || "",
+        });
+      }
+      case "/api/settings": {
+        const requestedModel = typeof body.model === "string" ? body.model.trim() : "";
+        const requestedBackend = typeof body.backend === "string" ? body.backend.trim() : "";
+        const catalog = await availableModels(opts);
+        const selected = catalog.find(
+          (entry) => entry.id === requestedModel && entry.backend === requestedBackend
+        );
+        if (!selected) return sendJson(400, { error: "selected model is not available" });
+        const reasoning = reasoningEffort(body.reasoning);
+        updateConfig({
+          backend: selected.backend,
+          model: selected.id,
+          reasoning: reasoning || undefined,
+        });
+        opts.backend = selected.backend;
+        opts.model = selected.id;
+        opts.reasoning = reasoning;
+        return sendJson(200, {
+          ok: true,
+          backend: opts.backend,
+          model: opts.model,
+          reasoning: opts.reasoning || "",
         });
       }
     }
@@ -2821,6 +2926,7 @@ module.exports = {
   prepareSidecarText,
   extractHookPrompt,
   likelyContainsTarget,
+  parseGjcModels,
   correctionHeadline,
   notificationContent,
   notifierArgs,

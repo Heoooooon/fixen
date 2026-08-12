@@ -408,6 +408,60 @@ button { background: none; border: 0; margin: 0; padding: 0; cursor: pointer; }
 .thinking { display: flex; align-items: center; gap: var(--space-2); color: var(--dim); font-size: var(--text-sm); }
 
 /* ==========================================================================
+   composer
+   ========================================================================== */
+.composer {
+  margin-bottom: var(--space-8);
+  padding: var(--space-5);
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-1);
+}
+.composer-head {
+  display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-3);
+}
+.composer-title { font-size: var(--text-md); font-weight: 650; color: var(--ink); }
+.composer-shortcut {
+  margin-left: auto; font: 600 var(--text-xs)/1 var(--font-mono); color: var(--dim);
+  border: 1px solid var(--rule); border-radius: 6px; padding: 5px 7px; background: var(--surface-sunk);
+}
+.composer-input {
+  display: block; width: 100%; min-height: 104px; resize: vertical;
+  padding: var(--space-3) var(--space-4); border: 1px solid var(--rule);
+  border-radius: var(--radius-md); background: var(--paper); color: var(--ink);
+  line-height: var(--leading-body);
+}
+.composer-input::placeholder { color: var(--dim); }
+.composer-controls {
+  display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-3);
+}
+.composer-target {
+  padding: 8px 30px 8px 10px; border: 1px solid var(--rule); border-radius: var(--radius-sm);
+  background: var(--surface); color: var(--muted); font-size: var(--text-sm);
+}
+.composer-submit {
+  margin-left: auto; display: inline-flex; align-items: center; gap: var(--space-2);
+  padding: 9px var(--space-4); border-radius: var(--radius-sm); background: var(--accent);
+  color: #fff; font-size: var(--text-sm); font-weight: 650;
+}
+.composer-submit:disabled { opacity: .55; cursor: wait; }
+.composer-result {
+  margin-top: var(--space-4); padding-top: var(--space-4); border-top: 1px solid var(--rule-soft);
+}
+.composer-result[hidden] { display: none; }
+.composer-corrected {
+  padding: var(--space-3) var(--space-4); border-radius: var(--radius-md);
+  background: var(--added-wash); color: var(--added); white-space: pre-wrap; word-break: break-word;
+}
+.composer-result-head { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); }
+.composer-result-label { font-size: var(--text-xs); font-weight: 700; text-transform: uppercase; letter-spacing: var(--tracking-label); color: var(--added); }
+.composer-copy { margin-left: auto; color: var(--muted); font-size: var(--text-sm); font-weight: 600; }
+.composer-notes { margin: var(--space-3) 0 0; padding-left: var(--space-5); color: var(--muted); font-size: var(--text-sm); }
+.composer-error { margin-top: var(--space-3); color: var(--removed); font-size: var(--text-sm); }
+.composer-error[hidden] { display: none; }
+
+/* ==========================================================================
    empty state
    ========================================================================== */
 .empty { text-align: center; padding: var(--space-16) var(--space-6); }
@@ -488,6 +542,35 @@ button { background: none; border: 0; margin: 0; padding: 0; cursor: pointer; }
     </div>
   </header>
   <hr class="masthead-rule">
+
+  <section class="composer" aria-labelledby="composer-title">
+    <div class="composer-head">
+      <span class="composer-title" id="composer-title">Correct your text</span>
+      <span class="composer-shortcut" title="Correct text">⌘↩</span>
+    </div>
+    <form id="composer-form">
+      <label class="sr-only" for="composer-input">Text to correct</label>
+      <textarea class="composer-input" id="composer-input" maxlength="64000" placeholder="Type or paste English or Korean…"></textarea>
+      <div class="composer-controls">
+        <label class="sr-only" for="composer-target">Language</label>
+        <select class="composer-target" id="composer-target">
+          <option value="Auto">Auto · English / Korean</option>
+          <option value="English">English</option>
+          <option value="Korean">Korean</option>
+        </select>
+        <button class="composer-submit" id="composer-submit" type="submit">Correct</button>
+      </div>
+    </form>
+    <div class="composer-error" id="composer-error" role="alert" hidden></div>
+    <div class="composer-result" id="composer-result" aria-live="polite" hidden>
+      <div class="composer-result-head">
+        <span class="composer-result-label">Corrected</span>
+        <button class="composer-copy" id="composer-copy" type="button">Copy</button>
+      </div>
+      <div class="composer-corrected" id="composer-corrected"></div>
+      <ul class="composer-notes" id="composer-notes"></ul>
+    </div>
+  </section>
 
   <main id="timeline" class="timeline" aria-live="polite"></main>
 
@@ -678,10 +761,15 @@ button { background: none; border: 0; margin: 0; padding: 0; cursor: pointer; }
   /* ======================================================================
      api
      ====================================================================== */
+  var API_TOKEN = new URLSearchParams(location.search).get("token") || "";
+
   function post(path, body) {
     return fetch(path, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "X-Fixen-Token": API_TOKEN
+      },
       body: JSON.stringify(body || {})
     }).then(function (res) {
       return res.json().catch(function () { return {}; }).then(function (data) {
@@ -705,8 +793,21 @@ button { background: none; border: 0; margin: 0; padding: 0; cursor: pointer; }
   var versionEl = document.getElementById("version");
   var clearBtn = document.getElementById("clear-all");
   var emptyTpl = document.getElementById("tpl-empty");
+  var composerForm = document.getElementById("composer-form");
+  var composerInput = document.getElementById("composer-input");
+  var composerTarget = document.getElementById("composer-target");
+  var composerSubmit = document.getElementById("composer-submit");
+  var composerError = document.getElementById("composer-error");
+  var composerResult = document.getElementById("composer-result");
+  var composerCorrected = document.getElementById("composer-corrected");
+  var composerNotes = document.getElementById("composer-notes");
+  var composerCopy = document.getElementById("composer-copy");
 
   var lastPayload = null;     // last raw JSON string from /api/state
+  var lastEtag = null;
+  var lastDraftId = null;
+  var lastCorrected = "";
+  var composerTargetInitialized = false;
   var seenIds = Object.create(null);
   var threads = Object.create(null);   // id -> [{role, text}]
   var openAsk = Object.create(null);   // id -> bool
@@ -872,6 +973,21 @@ button { background: none; border: 0; margin: 0; padding: 0; cursor: pointer; }
     var history = (state && Array.isArray(state.history)) ? state.history : [];
 
     targetText.textContent = state && state.target ? state.target : "English";
+    if (
+      !composerTargetInitialized && state &&
+      ["Auto", "English", "Korean"].indexOf(state.target) !== -1
+    ) {
+      composerTarget.value = state.target;
+      composerTargetInitialized = true;
+    }
+    if (state && state.draft && state.draft.id && state.draft.id !== lastDraftId) {
+      lastDraftId = state.draft.id;
+      composerInput.value = state.draft.text || "";
+      composerResult.hidden = true;
+      composerError.hidden = true;
+      composerInput.focus();
+      composerInput.setSelectionRange(composerInput.value.length, composerInput.value.length);
+    }
     countBadge.textContent = history.length + (history.length === 1 ? " entry" : " entries");
     versionEl.textContent = state && state.version ? "fixen v" + state.version : "fixen";
     clearBtn.hidden = history.length === 0;
@@ -906,6 +1022,61 @@ button { background: none; border: 0; margin: 0; padding: 0; cursor: pointer; }
   /* ======================================================================
      actions
      ====================================================================== */
+  function setComposerBusy(busyNow) {
+    composerSubmit.disabled = busyNow;
+    composerSubmit.textContent = busyNow ? "Correcting…" : "Correct";
+  }
+
+  function showComposerResult(data) {
+    lastCorrected = (data && data.corrected) || "";
+    composerCorrected.textContent = lastCorrected;
+    composerNotes.textContent = "";
+    var notes = data && Array.isArray(data.notes) ? data.notes : [];
+    for (var i = 0; i < notes.length; i++) composerNotes.appendChild(el("li", null, notes[i]));
+    composerNotes.hidden = notes.length === 0;
+    composerResult.hidden = false;
+    composerError.hidden = true;
+  }
+
+  composerForm.addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    var text = composerInput.value.trim();
+    if (!text) {
+      composerError.textContent = "Enter text to correct.";
+      composerError.hidden = false;
+      composerInput.focus();
+      return;
+    }
+    setComposerBusy(true);
+    composerError.hidden = true;
+    post("/api/correct", { text: text, target: composerTarget.value }).then(function (data) {
+      showComposerResult(data);
+      poll(true);
+    }).catch(function (err) {
+      composerError.textContent = err.message || "Correction failed.";
+      composerError.hidden = false;
+    }).then(function () {
+      setComposerBusy(false);
+    });
+  });
+
+  composerInput.addEventListener("keydown", function (ev) {
+    if ((ev.metaKey || ev.ctrlKey) && ev.key === "Enter") {
+      ev.preventDefault();
+      composerForm.requestSubmit();
+    }
+  });
+
+  composerCopy.addEventListener("click", function () {
+    if (!lastCorrected) return;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(lastCorrected).then(function () {
+        composerCopy.textContent = "Copied";
+        setTimeout(function () { composerCopy.textContent = "Copy"; }, 1200);
+      }).catch(function () {});
+    }
+  });
+
   function flash(btn) {
     btn.setAttribute("data-flash", "true");
     setTimeout(function () { btn.removeAttribute("data-flash"); }, 1200);
@@ -969,11 +1140,16 @@ button { background: none; border: 0; margin: 0; padding: 0; cursor: pointer; }
       if (!timeline.firstChild) render({ history: [] });
       return Promise.resolve();
     }
-    return fetch("/api/state", { cache: "no-store" }).then(function (res) {
+    var headers = { "X-Fixen-Token": API_TOKEN };
+    if (!force && lastEtag) headers["If-None-Match"] = lastEtag;
+    return fetch("/api/state", { cache: "no-store", headers: headers }).then(function (res) {
+      if (res.status === 304) return null;
       if (!res.ok) throw new Error("state " + res.status);
+      lastEtag = res.headers.get("etag");
       return res.text();
     }).then(function (text) {
       setOffline(false);
+      if (text === null) return;
       if (!force && text === lastPayload) return;
       lastPayload = text;
       var state;

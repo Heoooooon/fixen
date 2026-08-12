@@ -45,16 +45,18 @@ fixen                               # interactive mode (type lines, Ctrl+D to qu
 fixen -e "sentence"                 # also explain what was fixed
 fixen -e -l Korean "sentence"       # explanations in Korean
 fixen -t Japanese "日本語の文"        # correct any language, not just English
+fixen -t Auto "안되는거 같아"         # auto-detect English or Korean
 fixen --polish "draft message"      # fix a message for humans: show the diff, copy to clipboard
 fixen --notify -e "sentence"        # correct in a desktop notification
 fixen --last                        # show the most recent notification correction
+fixen doctor                        # check backend, storage, clipboard, and notifications
 fixen --ask "why was this changed?" # ask about that correction
 fixen --clear                       # delete the saved correction
 ```
 
 Sidecar actions use explicit `--` options, so ordinary text such as `fixen ask me tomorrow` or `fixen notify the team` remains a sentence to correct.
 
-English is just the default. `-t/--target` (or `FIXEN_TARGET`, or `"target"` in the config) switches the language being corrected — `fixen -t French -e -l Korean "..."` corrects French and explains the fixes in Korean.
+English is just the default. `-t/--target` (or `FIXEN_TARGET`, or `"target"` in the config) switches the language being corrected — `fixen -t French -e -l Korean "..."` corrects French and explains the fixes in Korean. Use `-t Auto` to detect English or Korean automatically; saved history records the detected language rather than `Auto`.
 
 ## Chat mode: corrections inside your AI CLI
 
@@ -110,7 +112,7 @@ fixen --ask "왜 work로 고쳤어?"
 fixen --clear
 ```
 
-`--notify` filters generated context, code, logs, quotes, URLs, and common secret assignments before invoking the backend. Already-natural writing produces no notification. Only the exact original excerpt selected for correction—not the complete chat prompt—is saved to the private `~/.config/fixen/last-correction.json`. The record expires after 24 hours and each result replaces the previous one. `--last` prints it, `--ask` sends that minimal correction plus your question to the configured backend, and `--clear` deletes it immediately. Set `FIXEN_SIDECAR_NO_STORE=1` for notifications with no retained follow-up context.
+`--notify` filters generated context, code, logs, quotes, URLs, and common secret assignments before invoking the backend. Already-natural writing produces no notification. Only the exact original excerpt selected for correction—not the complete chat prompt—is saved to the private `~/.config/fixen/last-correction.json`. The record expires after 24 hours and each result replaces the previous one. `--last` prints it, `--ask` sends that minimal correction plus your question to the configured backend, and `--clear` deletes it immediately. Set `FIXEN_SIDECAR_NO_STORE=1` to avoid saving the new result; an older saved correction is left untouched.
 
 For an AI tool with a prompt-submit hook, configure the hook command as:
 
@@ -134,8 +136,12 @@ Delivery uses `terminal-notifier` when it is on `PATH` (`brew install terminal-n
 
 ## History dashboard (GUI)
 
-Every correction the sidecar stores is also appended to a private history file
-(`~/.config/fixen/history.jsonl`, newest 500 entries, `0600`). `fixen --gui`
+Corrections from one-shot, stdin, interactive, polish, and stored sidecar runs
+are appended to a private history file (`~/.config/fixen/history.jsonl`, `0600`).
+Records are capped at 64 KiB each, and history keeps at most the newest 500
+entries or 8 MiB. Concurrent fixen processes serialize updates so they cannot
+overwrite one another. Set `FIXEN_NO_HISTORY=1` to disable history outside the
+sidecar, or `FIXEN_SIDECAR_NO_STORE=1` to keep sidecar results out. `fixen --gui`
 turns that file into a local learning dashboard:
 
 ```sh
@@ -144,20 +150,14 @@ fixen --gui --port 0     # pick a random free port
 FIXEN_GUI_NO_OPEN=1 fixen --gui   # start without opening a browser
 ```
 
-The page is a single zero-dependency HTML file served only on `127.0.0.1`:
-a timeline of your corrections with word-level diff highlighting, the reasons
+The page is a single zero-dependency HTML file served only on `127.0.0.1`.
+Each launch generates an unguessable URL token, and every API request must
+present it, preventing unrelated web pages from reading or mutating history:
+it includes a manual English/Korean correction box (submit with
+`Cmd/Ctrl+Enter`) and a timeline with word-level diff highlighting, the reasons
 for each fix, one-click copy of the corrected sentence, per-correction
 follow-up questions (routed through your configured backend, like `--ask`),
-and delete/clear controls. `FIXEN_SIDECAR_NO_STORE=1` keeps history empty,
-exactly as it does for `--last`.
-
-## Menubar app
-
-Prefer a resident app over a terminal command? The [`app/`](app/) directory
-contains **fixen-app**, a tiny Tauri menubar shell: the fixen mark lives in
-your menu bar, one click opens the history dashboard in an always-on-top
-panel, and quitting it also stops the managed `fixen --gui` server. See
-[app/README.md](app/README.md) for build instructions.
+and delete/clear controls.
 
 ## Fix anywhere: the global hotkey (macOS)
 

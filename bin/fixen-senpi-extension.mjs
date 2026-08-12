@@ -10,10 +10,7 @@ export function queueFixenPrompt(
     const args = script ? [script, "--hook", "-e"] : ["--hook", "-e"];
     const child = spawn(command, args, {
       stdio: ["pipe", "ignore", "ignore"],
-      env: {
-        ...process.env,
-        FIXEN_SIDECAR_TIMEOUT: process.env.FIXEN_SIDECAR_TIMEOUT || "60",
-      },
+      env: process.env,
     });
     let settled = false;
     const finish = () => {

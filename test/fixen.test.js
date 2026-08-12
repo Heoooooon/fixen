@@ -1531,7 +1531,7 @@ test("gui: exposes GJC models and persists model settings", async () => {
   try {
     let state = await (await fetch(`${gui.url}/api/state`, { headers: gui.headers })).json();
     assert.deepEqual(
-      state.models.map((model) => model.id),
+      state.models.filter((model) => model.backend === "gjc").map((model) => model.id),
       ["openai-codex/gpt-5.3-codex-spark", "anthropic/claude-haiku-4-5"]
     );
     const saved = await fetch(`${gui.url}/api/settings`, {
@@ -1550,6 +1550,40 @@ test("gui: exposes GJC models and persists model settings", async () => {
     assert.equal(config.reasoning, "minimal");
     state = await (await fetch(`${gui.url}/api/state`, { headers: gui.headers })).json();
     assert.equal(state.model, "openai-codex/gpt-5.3-codex-spark");
+  } finally {
+    gui.kill();
+  }
+});
+
+test("gui: stores DeepSeek API credentials separately from config", async () => {
+  const home = tmpHome();
+  const gui = await startGui(home);
+  try {
+    const saved = await fetch(`${gui.url}/api/settings`, {
+      method: "POST",
+      headers: { ...gui.headers, "content-type": "application/json" },
+      body: JSON.stringify({
+        backend: "api",
+        model: "deepseek-chat",
+        apiProvider: "deepseek",
+        apiUrl: "https://api.deepseek.com/v1",
+        apiKey: "sk-private-test",
+      }),
+    });
+    assert.equal(saved.status, 200, await saved.text());
+    const config = JSON.parse(fs.readFileSync(path.join(CONFIG(home), "config.json"), "utf8"));
+    const credentialsPath = path.join(CONFIG(home), "credentials.json");
+    const credentials = JSON.parse(fs.readFileSync(credentialsPath, "utf8"));
+    assert.equal(config.backend, "api");
+    assert.equal(config.model, "deepseek-chat");
+    assert.equal(config.apiProvider, "deepseek");
+    assert.equal(config.apiUrl, "https://api.deepseek.com/v1");
+    assert.equal(config.apiKey, undefined);
+    assert.equal(credentials.apiKey, "sk-private-test");
+    assert.equal(fs.statSync(credentialsPath).mode & 0o777, 0o600);
+    const state = await (await fetch(`${gui.url}/api/state`, { headers: gui.headers })).json();
+    assert.equal(state.hasApiKey, true);
+    assert.equal(JSON.stringify(state).includes("sk-private-test"), false);
   } finally {
     gui.kill();
   }

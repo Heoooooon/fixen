@@ -152,13 +152,19 @@ FIXEN_GUI_NO_OPEN=1 fixen --gui   # start without opening a browser
 
 The page is a single zero-dependency HTML file served only on `127.0.0.1`.
 Each launch generates an unguessable URL token, and every API request must
-present it, preventing unrelated web pages from reading or mutating history:
-it includes a manual English/Korean correction box (submit with
-`Cmd/Ctrl+Enter`), a GJC-backed model/reasoning selector, and a timeline with
+present it, preventing unrelated web pages from reading or mutating history.
+It includes a manual English/Korean correction box (submit with
+`Cmd/Ctrl+Enter`), backend/model/reasoning selectors, and a timeline with
 word-level diff highlighting, the reasons
 for each fix, one-click copy of the corrected sentence, per-correction
 follow-up questions (routed through your configured backend, like `--ask`),
 and delete/clear controls.
+
+The backend selector detects and reuses authenticated GJC, Claude Code, Codex,
+Gemini, and Ollama installations. OpenAI-compatible providers can be configured
+with a base URL, model ID, and API key; presets are included for DeepSeek,
+Groq, OpenRouter, and OpenAI. API keys are kept out of `config.json` and stored
+locally in `~/.config/fixen/credentials.json` with `0600` permissions.
 
 ## Fix anywhere: the global hotkey (macOS)
 

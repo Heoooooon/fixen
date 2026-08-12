@@ -24,6 +24,7 @@ const CONFIG_DIR = path.join(
   "fixen"
 );
 const CONFIG_PATH = path.join(CONFIG_DIR, "config.json");
+const CREDENTIALS_PATH = path.join(CONFIG_DIR, "credentials.json");
 const LAST_CORRECTION_FILE = path.join(CONFIG_DIR, "last-correction.json");
 const APP_PRESENCE_FILE = path.join(CONFIG_DIR, "app.pid");
 const COMPOSE_FILE = path.join(CONFIG_DIR, "compose.json");
@@ -168,6 +169,25 @@ function updateConfig(patch) {
     if (value === undefined || value === null || value === "") delete next[key];
   }
   atomicWriteFile(CONFIG_PATH, JSON.stringify(next, null, 2) + "\n");
+  return next;
+}
+
+function loadCredentials() {
+  try {
+    const value = JSON.parse(fs.readFileSync(CREDENTIALS_PATH, "utf8"));
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  } catch (e) {
+    if (e.code !== "ENOENT" && !(e instanceof SyntaxError)) throw e;
+    return {};
+  }
+}
+
+function updateCredentials(patch) {
+  const next = { ...loadCredentials(), ...patch };
+  for (const [key, value] of Object.entries(next)) {
+    if (value === undefined || value === null || value === "") delete next[key];
+  }
+  atomicWriteFile(CREDENTIALS_PATH, JSON.stringify(next, null, 2) + "\n");
   return next;
 }
 
@@ -423,9 +443,13 @@ const API_INSTRUCTIONS =
 
 // Both HTTP backends share one base URL, one key, and one error contract:
 // throttling and upstream faults are retryable, everything else is not.
-async function postApi(label, endpoint, body, timeoutFallback) {
-  const base = (process.env.FIXEN_API_URL || "https://api.openai.com/v1").replace(/\/$/, "");
-  const key = process.env.FIXEN_API_KEY || process.env.OPENAI_API_KEY;
+async function postApi(label, endpoint, body, timeoutFallback, opts = {}) {
+  const base = (
+    opts.apiUrl ||
+    process.env.FIXEN_API_URL ||
+    "https://api.openai.com/v1"
+  ).replace(/\/$/, "");
+  const key = opts.apiKey || process.env.FIXEN_API_KEY || process.env.OPENAI_API_KEY;
   // Config errors fail() outright — deterministic, never worth a retry.
   if (!key) {
     const error = new Error(`${label} backend needs FIXEN_API_KEY (or OPENAI_API_KEY)`);
@@ -457,7 +481,8 @@ async function postApi(label, endpoint, body, timeoutFallback) {
   }
 }
 
-async function apiBackend(prompt, { model }) {
+async function apiBackend(prompt, opts) {
+  const { model } = opts;
   const data = await postApi("api", "/chat/completions", {
     model: model || process.env.FIXEN_MODEL || "gpt-4o-mini",
     messages: [
@@ -465,7 +490,7 @@ async function apiBackend(prompt, { model }) {
       { role: "user", content: prompt },
     ],
     temperature: 0,
-  });
+  }, undefined, opts);
   const text = data.choices?.[0]?.message?.content;
   if (typeof text !== "string") throw new Error("api backend returned no message content");
   return text;
@@ -493,7 +518,8 @@ function reasoningEffort(value) {
   return effort;
 }
 
-async function openaiBackend(prompt, { model, reasoning }) {
+async function openaiBackend(prompt, opts) {
+  const { model, reasoning } = opts;
   const effort = reasoningEffort(reasoning);
   // No default model: a pro tier costs an order of magnitude more than a mini
   // one, so the model is always the caller's explicit choice.
@@ -511,7 +537,7 @@ async function openaiBackend(prompt, { model, reasoning }) {
     input: prompt,
     ...(effort ? { reasoning: { effort } } : {}),
     store: false,
-  }, RESPONSES_TIMEOUT);
+  }, RESPONSES_TIMEOUT, opts);
   return responsesText(data);
 }
 
@@ -593,12 +619,50 @@ function parseGjcModels(output) {
   return models;
 }
 
+const BACKEND_PRESETS = [
+  { id: "gjc", label: "GJC", kind: "cli", available: () => which("gjc") },
+  { id: "claude", label: "Claude Code", kind: "cli", available: () => which("claude") },
+  { id: "codex", label: "Codex CLI", kind: "cli", available: () => which("codex") },
+  { id: "gemini", label: "Gemini CLI", kind: "cli", available: () => which("gemini") },
+  { id: "ollama", label: "Ollama", kind: "local", available: () => which("ollama") },
+  { id: "api", label: "OpenAI-compatible API", kind: "api", available: () => true },
+  { id: "openai", label: "OpenAI Responses API", kind: "api", available: () => true },
+];
+const API_PROVIDERS = [
+  { id: "openai-compatible", label: "OpenAI compatible", apiUrl: "https://api.openai.com/v1", model: "gpt-4o-mini", backend: "api" },
+  { id: "deepseek", label: "DeepSeek", apiUrl: "https://api.deepseek.com/v1", model: "deepseek-chat", backend: "api" },
+  { id: "groq", label: "Groq", apiUrl: "https://api.groq.com/openai/v1", model: "llama-3.1-8b-instant", backend: "api" },
+  { id: "openrouter", label: "OpenRouter", apiUrl: "https://openrouter.ai/api/v1", model: "openai/gpt-4o-mini", backend: "api" },
+  { id: "custom", label: "Custom API", apiUrl: "", model: "", backend: "api" },
+];
+const CLI_MODEL_PRESETS = {
+  claude: ["haiku", "sonnet", "opus"],
+  codex: ["gpt-5.3-codex-spark", "gpt-5.3-codex", "gpt-5.2-codex"],
+  gemini: ["gemini-2.5-flash", "gemini-2.5-pro"],
+  ollama: ["llama3.2", "qwen2.5:3b"],
+};
+
+function backendCatalog() {
+  return BACKEND_PRESETS.map((entry) => ({
+    id: entry.id,
+    label: entry.label,
+    kind: entry.kind,
+    available: entry.available(),
+  }));
+}
+
 async function availableModels(opts) {
   const now = Date.now();
   if (modelCatalogCache && now - modelCatalogCache.loadedAt < MODEL_CATALOG_TTL_MS) {
     return modelCatalogCache.models;
   }
   const models = [];
+  for (const [backend, ids] of Object.entries(CLI_MODEL_PRESETS)) {
+    if (!which(backend)) continue;
+    for (const id of ids) {
+      models.push({ id, label: id, provider: backend, backend });
+    }
+  }
   if (which("gjc")) {
     try {
       const output = await runArgv(["gjc", "--list-models"], {
@@ -614,6 +678,17 @@ async function availableModels(opts) {
       provider: opts.backend,
       backend: opts.backend,
     });
+  }
+  const configured = loadConfig();
+  for (const backend of ["claude", "codex", "gemini", "ollama", "api", "openai"]) {
+    if (configured[`${backend}Model`]) {
+      models.push({
+        id: configured[`${backend}Model`],
+        label: configured[`${backend}Model`],
+        provider: backend,
+        backend,
+      });
+    }
   }
   modelCatalogCache = { loadedAt: now, models };
   return models;
@@ -1584,6 +1659,8 @@ async function handleGuiRequest(req, res, opts) {
       etag,
     });
     const models = await availableModels(opts);
+    const config = loadConfig();
+    const credentials = loadCredentials();
     res.end(JSON.stringify({
       version: VERSION,
       target: opts.target,
@@ -1592,6 +1669,11 @@ async function handleGuiRequest(req, res, opts) {
       model: opts.model || "",
       reasoning: opts.reasoning || "",
       models,
+      backends: backendCatalog(),
+      apiProviders: API_PROVIDERS,
+      apiProvider: config.apiProvider || "",
+      apiUrl: config.apiUrl || "",
+      hasApiKey: Boolean(credentials.apiKey),
       history: loadHistory(),
       draft: loadComposeDraft(),
     }));
@@ -1651,7 +1733,15 @@ async function handleGuiRequest(req, res, opts) {
         const selected = requestedModel
           ? catalog.find((entry) => entry.id === requestedModel && (!requestedBackend || entry.backend === requestedBackend))
           : null;
-        if (requestedModel && !selected) {
+        const configured = loadConfig();
+        const configuredModel =
+          configured[`${requestedBackend}Model`] ||
+          (configured.backend === requestedBackend ? configured.model : "");
+        if (
+          requestedModel && !selected &&
+          requestedModel !== configuredModel &&
+          !["api", "openai"].includes(requestedBackend)
+        ) {
           return sendJson(400, { error: "selected model is not available" });
         }
         const reasoning = reasoningEffort(body.reasoning);
@@ -1663,6 +1753,11 @@ async function handleGuiRequest(req, res, opts) {
           target,
           explain: true,
         };
+        if (["api", "openai"].includes(manualOpts.backend)) {
+          const config = loadConfig();
+          manualOpts.apiUrl = config.apiUrl;
+          manualOpts.apiKey = loadCredentials().apiKey;
+        }
         const output = await correct(text, manualOpts);
         const parsed = finalizeCorrection(text, output, manualOpts);
         return sendJson(200, {
@@ -1675,27 +1770,57 @@ async function handleGuiRequest(req, res, opts) {
         });
       }
       case "/api/settings": {
-        const requestedModel = typeof body.model === "string" ? body.model.trim() : "";
         const requestedBackend = typeof body.backend === "string" ? body.backend.trim() : "";
+        const requestedModel = typeof body.model === "string" ? body.model.trim() : "";
+        const requestedApiUrl = typeof body.apiUrl === "string" ? body.apiUrl.trim() : "";
+        const requestedApiProvider =
+          typeof body.apiProvider === "string" ? body.apiProvider.trim() : "";
+        const requestedApiKey = typeof body.apiKey === "string" ? body.apiKey.trim() : "";
+        if (!BACKEND_PRESETS.some((entry) => entry.id === requestedBackend)) {
+          return sendJson(400, { error: "unknown backend" });
+        }
         const catalog = await availableModels(opts);
         const selected = catalog.find(
           (entry) => entry.id === requestedModel && entry.backend === requestedBackend
         );
-        if (!selected) return sendJson(400, { error: "selected model is not available" });
+        if (!selected && !requestedModel) {
+          return sendJson(400, { error: "model is required" });
+        }
+        if (["api", "openai"].includes(requestedBackend)) {
+          let parsed;
+          try {
+            parsed = new URL(requestedApiUrl);
+          } catch {
+            return sendJson(400, { error: "a valid API URL is required" });
+          }
+          if (parsed.protocol !== "https:" && parsed.hostname !== "127.0.0.1" && parsed.hostname !== "localhost") {
+            return sendJson(400, { error: "API URL must use HTTPS (except localhost)" });
+          }
+          if (requestedApiKey) updateCredentials({ apiKey: requestedApiKey });
+          if (!requestedApiKey && !loadCredentials().apiKey) {
+            return sendJson(400, { error: "API key is required" });
+          }
+        }
         const reasoning = reasoningEffort(body.reasoning);
         updateConfig({
-          backend: selected.backend,
-          model: selected.id,
+          backend: requestedBackend,
+          model: selected?.id || requestedModel,
+          [`${requestedBackend}Model`]: selected?.id || requestedModel,
           reasoning: reasoning || undefined,
+          apiProvider: requestedApiProvider || undefined,
+          apiUrl: requestedApiUrl || undefined,
         });
-        opts.backend = selected.backend;
-        opts.model = selected.id;
+        opts.backend = requestedBackend;
+        opts.model = selected?.id || requestedModel;
         opts.reasoning = reasoning;
+        opts.apiUrl = requestedApiUrl || opts.apiUrl;
+        opts.apiKey = loadCredentials().apiKey;
         return sendJson(200, {
           ok: true,
           backend: opts.backend,
           model: opts.model,
           reasoning: opts.reasoning || "",
+          hasApiKey: Boolean(opts.apiKey),
         });
       }
     }
@@ -2702,11 +2827,14 @@ async function interactive(opts) {
 
 async function main() {
   const cfg = loadConfig();
+  const credentials = loadCredentials();
   const opts = parseArgs(process.argv.slice(2));
   opts.command ??= process.env.FIXEN_BACKEND_CMD || cfg.command || undefined;
   opts.backend ??= process.env.FIXEN_BACKEND || cfg.backend || undefined;
   opts.model ??= process.env.FIXEN_MODEL || cfg.model || undefined;
   opts.reasoning ??= process.env.FIXEN_REASONING || cfg.reasoning || undefined;
+  opts.apiUrl ??= process.env.FIXEN_API_URL || cfg.apiUrl || undefined;
+  opts.apiKey ??= process.env.FIXEN_API_KEY || process.env.OPENAI_API_KEY || credentials.apiKey || undefined;
   opts.lang ??= process.env.FIXEN_LANG || cfg.lang || "English";
   opts.target ??= process.env.FIXEN_TARGET || cfg.target || "English";
   // -e / --no-explain win; only an untouched flag falls through to env, config.

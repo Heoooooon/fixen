@@ -433,6 +433,16 @@ button { background: none; border: 0; margin: 0; padding: 0; cursor: pointer; }
   line-height: var(--leading-body);
 }
 .composer-input::placeholder { color: var(--dim); }
+.backend-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-2); margin-bottom: var(--space-2);
+}
+.composer-backend, .settings-toggle {
+  min-width: 0; padding: 8px 10px; border: 1px solid var(--rule);
+  border-radius: var(--radius-sm); background: var(--surface); color: var(--muted);
+  font-size: var(--text-sm);
+}
+.settings-toggle { font-weight: 650; }
 .composer-controls {
   display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-3);
 }
@@ -449,6 +459,17 @@ button { background: none; border: 0; margin: 0; padding: 0; cursor: pointer; }
   border: 1px solid var(--rule); border-radius: var(--radius-sm);
   background: var(--surface); color: var(--muted); font-size: var(--text-sm);
 }
+.provider-settings {
+  display: grid; gap: var(--space-2); margin-top: var(--space-3);
+  padding-top: var(--space-3); border-top: 1px solid var(--rule-soft);
+}
+.provider-settings[hidden] { display: none; }
+.api-provider, .setting-input, .save-provider {
+  width: 100%; padding: 9px 10px; border: 1px solid var(--rule);
+  border-radius: var(--radius-sm); background: var(--surface); color: var(--ink);
+}
+.save-provider { background: var(--ink); color: var(--paper); font-weight: 650; }
+.credential-note { margin: 0; color: var(--dim); font-size: var(--text-xs); }
 .composer-submit {
   margin-left: auto; display: inline-flex; align-items: center; gap: var(--space-2);
   padding: 9px var(--space-4); border-radius: var(--radius-sm); background: var(--accent);
@@ -469,6 +490,7 @@ button { background: none; border: 0; margin: 0; padding: 0; cursor: pointer; }
 .composer-notes { margin: var(--space-3) 0 0; padding-left: var(--space-5); color: var(--muted); font-size: var(--text-sm); }
 .composer-error { margin-top: var(--space-3); color: var(--removed); font-size: var(--text-sm); }
 .composer-error[hidden] { display: none; }
+.panel-section-head { display: none; }
 
 /* ==========================================================================
    empty state
@@ -540,7 +562,7 @@ html[data-menubar="true"] .banner {
 }
 html[data-menubar="true"] .banner-hint { display: none; }
 html[data-menubar="true"] .masthead {
-  align-items: center; padding: 17px 1px 12px; gap: 9px;
+  align-items: center; padding: 21px 3px 16px; gap: 10px;
 }
 html[data-menubar="true"] .mark { width: 29px; height: 29px; color: #ffb6f8; }
 html[data-menubar="true"] .wordmark { font-size: 21px; color: #fff; }
@@ -560,8 +582,9 @@ html[data-menubar="true"] .masthead-rule {
   margin-bottom: 12px; background: rgba(255,255,255,.16);
 }
 html[data-menubar="true"] .composer {
-  margin-bottom: 14px; padding: 13px; border: 1px solid rgba(255,255,255,.13);
-  border-radius: 13px; background: rgba(13, 3, 30, .25); box-shadow: none;
+  margin-bottom: 20px; padding: 16px; border: 1px solid rgba(255,255,255,.14);
+  border-radius: 15px; background: rgba(13, 3, 30, .28);
+  box-shadow: inset 0 1px rgba(255,255,255,.06);
 }
 html[data-menubar="true"] .composer-head { margin-bottom: 9px; }
 html[data-menubar="true"] .composer-title { color: #fff; font-size: 14px; }
@@ -569,7 +592,7 @@ html[data-menubar="true"] .composer-shortcut {
   color: #d8c2f3; background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.14);
 }
 html[data-menubar="true"] .composer-input {
-  min-height: 78px; max-height: 160px; padding: 9px 11px;
+  min-height: 92px; max-height: 190px; padding: 11px 12px;
   border-color: rgba(255,255,255,.14); border-radius: 9px;
   background: rgba(8, 2, 20, .32); color: #fff;
 }
@@ -579,10 +602,20 @@ html[data-menubar="true"] .composer-target {
   max-width: 184px; border-color: rgba(255,255,255,.14);
   background: #33125d; color: #eadcff;
 }
+html[data-menubar="true"] .composer-backend,
+html[data-menubar="true"] .settings-toggle,
 html[data-menubar="true"] .composer-model,
-html[data-menubar="true"] .composer-reasoning {
+html[data-menubar="true"] .composer-reasoning,
+html[data-menubar="true"] .api-provider,
+html[data-menubar="true"] .setting-input {
   border-color: rgba(255,255,255,.14); background: #33125d; color: #eadcff;
 }
+html[data-menubar="true"] .save-provider {
+  border-color: rgba(255,255,255,.16);
+  background: linear-gradient(135deg, #d348ff, #8e4dff); color: #fff;
+}
+html[data-menubar="true"] .provider-settings { border-color: rgba(255,255,255,.12); }
+html[data-menubar="true"] .credential-note { color: #bda9d1; }
 html[data-menubar="true"] .composer-submit {
   padding: 8px 14px; background: linear-gradient(135deg, #d348ff, #8e4dff);
   box-shadow: 0 4px 14px rgba(151, 62, 255, .32);
@@ -594,6 +627,13 @@ html[data-menubar="true"] .composer-corrected {
 html[data-menubar="true"] .composer-copy,
 html[data-menubar="true"] .composer-notes { color: #ddccef; }
 html[data-menubar="true"] .timeline { gap: 9px; padding-bottom: 2px; }
+html[data-menubar="true"] .panel-section-head {
+  display: flex; justify-content: space-between; align-items: center;
+  margin: 0 2px 9px; color: #f5ebff; font-size: 12px; font-weight: 700;
+}
+html[data-menubar="true"] .panel-section-head span:last-child {
+  color: #bda9d1; font-size: 10px; font-weight: 500;
+}
 html[data-menubar="true"] .timeline[data-populated="true"]::before,
 html[data-menubar="true"] .entry-node { display: none; }
 html[data-menubar="true"] .entry { padding-left: 0; }
@@ -602,8 +642,9 @@ html[data-menubar="true"] .entry-when {
   text-align: left; color: #bda9d1;
 }
 html[data-menubar="true"] .card {
-  padding: 12px; border-color: rgba(255,255,255,.12);
-  border-radius: 12px; background: rgba(15, 4, 34, .28); box-shadow: none;
+  padding: 14px; border-color: rgba(255,255,255,.13);
+  border-radius: 14px; background: rgba(15, 4, 34, .32);
+  box-shadow: inset 0 1px rgba(255,255,255,.04);
 }
 html[data-menubar="true"] .card:hover { transform: none; box-shadow: none; }
 html[data-menubar="true"] .card-actions { opacity: 1; }
@@ -670,6 +711,13 @@ html[data-menubar="true"] .footnote { display: none; }
       <span class="composer-shortcut" title="Correct text">⌘↩</span>
     </div>
     <form id="composer-form">
+      <div class="backend-row">
+        <label class="sr-only" for="composer-backend">Backend</label>
+        <select class="composer-backend" id="composer-backend">
+          <option value="">Loading backends…</option>
+        </select>
+        <button class="settings-toggle" id="settings-toggle" type="button" aria-expanded="false">Configure</button>
+      </div>
       <label class="sr-only" for="composer-input">Text to correct</label>
       <textarea class="composer-input" id="composer-input" maxlength="64000" placeholder="Type or paste English or Korean…"></textarea>
       <div class="composer-controls">
@@ -695,6 +743,14 @@ html[data-menubar="true"] .footnote { display: none; }
           <option value="high">High</option>
         </select>
       </div>
+      <div class="provider-settings" id="provider-settings" hidden>
+        <select class="api-provider" id="api-provider" aria-label="API provider"></select>
+        <input class="setting-input" id="custom-model" type="text" placeholder="Model ID">
+        <input class="setting-input" id="api-url" type="url" placeholder="https://api.example.com/v1">
+        <input class="setting-input" id="api-key" type="password" autocomplete="off" placeholder="API key">
+        <button class="save-provider" id="save-provider" type="button">Save provider</button>
+        <p class="credential-note" id="credential-note">Key is stored locally with 0600 permissions.</p>
+      </div>
     </form>
     <div class="composer-error" id="composer-error" role="alert" hidden></div>
     <div class="composer-result" id="composer-result" aria-live="polite" hidden>
@@ -707,6 +763,10 @@ html[data-menubar="true"] .footnote { display: none; }
     </div>
   </section>
 
+  <div class="panel-section-head">
+    <span>Recent corrections</span>
+    <span>Latest 3</span>
+  </div>
   <main id="timeline" class="timeline" aria-live="polite"></main>
 
   <footer class="footnote" id="footnote">
@@ -932,6 +992,7 @@ html[data-menubar="true"] .footnote { display: none; }
   var clearBtn = document.getElementById("clear-all");
   var emptyTpl = document.getElementById("tpl-empty");
   var composerForm = document.getElementById("composer-form");
+  var composerBackend = document.getElementById("composer-backend");
   var composerInput = document.getElementById("composer-input");
   var composerTarget = document.getElementById("composer-target");
   var composerModel = document.getElementById("composer-model");
@@ -942,6 +1003,14 @@ html[data-menubar="true"] .footnote { display: none; }
   var composerCorrected = document.getElementById("composer-corrected");
   var composerNotes = document.getElementById("composer-notes");
   var composerCopy = document.getElementById("composer-copy");
+  var settingsToggle = document.getElementById("settings-toggle");
+  var providerSettings = document.getElementById("provider-settings");
+  var apiProvider = document.getElementById("api-provider");
+  var customModel = document.getElementById("custom-model");
+  var apiUrl = document.getElementById("api-url");
+  var apiKey = document.getElementById("api-key");
+  var saveProvider = document.getElementById("save-provider");
+  var credentialNote = document.getElementById("credential-note");
 
   var lastPayload = null;     // last raw JSON string from /api/state
   var lastEtag = null;
@@ -950,6 +1019,10 @@ html[data-menubar="true"] .footnote { display: none; }
   var composerTargetInitialized = false;
   var composerModelInitialized = false;
   var modelEntries = Object.create(null);
+  var allModels = [];
+  var backendEntries = Object.create(null);
+  var apiProviderEntries = Object.create(null);
+  var activeState = null;
   var settingsSaveTimer = null;
   var seenIds = Object.create(null);
   var threads = Object.create(null);   // id -> [{role, text}]
@@ -1113,6 +1186,7 @@ html[data-menubar="true"] .footnote { display: none; }
   }
 
   function render(state) {
+    activeState = state;
     var history = (state && Array.isArray(state.history)) ? state.history : [];
 
     targetText.textContent = state && state.target ? state.target : "English";
@@ -1124,31 +1198,37 @@ html[data-menubar="true"] .footnote { display: none; }
       composerTargetInitialized = true;
     }
     if (!composerModelInitialized && state && Array.isArray(state.models)) {
-      composerModel.textContent = "";
-      modelEntries = Object.create(null);
-      var groups = Object.create(null);
-      for (var mi = 0; mi < state.models.length; mi++) {
-        var model = state.models[mi];
-        if (!model || !model.id || !model.backend) continue;
-        var key = model.backend + "\n" + model.id;
-        modelEntries[key] = model;
-        var groupName = model.backend === "gjc" ? ("GJC · " + (model.provider || "models")) : model.backend;
-        if (!groups[groupName]) {
-          groups[groupName] = document.createElement("optgroup");
-          groups[groupName].label = groupName;
-          composerModel.appendChild(groups[groupName]);
-        }
-        var option = document.createElement("option");
-        option.value = key;
-        option.textContent = model.label || model.id;
-        groups[groupName].appendChild(option);
+      composerBackend.textContent = "";
+      backendEntries = Object.create(null);
+      for (var bi = 0; bi < (state.backends || []).length; bi++) {
+        var backend = state.backends[bi];
+        backendEntries[backend.id] = backend;
+        var backendOption = document.createElement("option");
+        backendOption.value = backend.id;
+        backendOption.textContent = backend.label + (backend.available ? "" : " · setup");
+        composerBackend.appendChild(backendOption);
       }
-      var selectedKey = (state.backend || "") + "\n" + (state.model || "");
-      if (modelEntries[selectedKey]) composerModel.value = selectedKey;
-      else if (composerModel.options.length) composerModel.selectedIndex = 0;
+      composerBackend.value = state.backend || "gjc";
+      allModels = state.models;
+      apiProvider.textContent = "";
+      for (var pi = 0; pi < (state.apiProviders || []).length; pi++) {
+        var provider = state.apiProviders[pi];
+        apiProviderEntries[provider.id] = provider;
+        var providerOption = document.createElement("option");
+        providerOption.value = provider.id;
+        providerOption.textContent = provider.label;
+        apiProvider.appendChild(providerOption);
+      }
+      apiProvider.value = state.apiProvider || "openai-compatible";
+      apiUrl.value = state.apiUrl || "";
+      credentialNote.textContent = state.hasApiKey
+        ? "API key saved locally. Leave blank to keep it."
+        : "Key is stored locally with 0600 permissions.";
+      renderModelOptions(state.backend || "gjc", state.model || "");
       composerReasoning.value = state.reasoning || "";
       composerModelInitialized = true;
     }
+
     if (state && state.draft && state.draft.id && state.draft.id !== lastDraftId) {
       lastDraftId = state.draft.id;
       composerInput.value = state.draft.text || "";
@@ -1169,8 +1249,9 @@ html[data-menubar="true"] .footnote { display: none; }
       return;
     }
 
-    for (var i = 0; i < history.length; i++) {
-      var rec = history[i];
+    var visibleHistory = MENUBAR ? history.slice(0, 3) : history;
+    for (var i = 0; i < visibleHistory.length; i++) {
+      var rec = visibleHistory[i];
       if (!rec || !rec.id) continue;
 
       var entry = el("div", "entry");
@@ -1188,6 +1269,29 @@ html[data-menubar="true"] .footnote { display: none; }
     firstRender = false;
   }
 
+  function renderModelOptions(backend, selectedId) {
+    composerModel.textContent = "";
+    modelEntries = Object.create(null);
+    var matched = allModels.filter(function (model) { return model.backend === backend; });
+    for (var i = 0; i < matched.length; i++) {
+      var model = matched[i];
+      var key = model.backend + "\n" + model.id;
+      modelEntries[key] = model;
+      var option = document.createElement("option");
+      option.value = key;
+      option.textContent = model.label || model.id;
+      composerModel.appendChild(option);
+    }
+    if (!matched.length) {
+      var customOption = document.createElement("option");
+      customOption.value = "";
+      customOption.textContent = "Enter model in Configure";
+      composerModel.appendChild(customOption);
+    }
+    var selectedKey = backend + "\n" + selectedId;
+    if (modelEntries[selectedKey]) composerModel.value = selectedKey;
+  }
+
   /* ======================================================================
      actions
      ====================================================================== */
@@ -1200,15 +1304,76 @@ html[data-menubar="true"] .footnote { display: none; }
     return modelEntries[composerModel.value] || null;
   }
 
+  composerBackend.addEventListener("change", function () {
+    renderModelOptions(composerBackend.value, "");
+    customModel.value = "";
+    providerSettings.hidden = !["api", "openai"].includes(composerBackend.value);
+    settingsToggle.setAttribute("aria-expanded", String(!providerSettings.hidden));
+  });
+
+  settingsToggle.addEventListener("click", function () {
+    providerSettings.hidden = !providerSettings.hidden;
+    settingsToggle.setAttribute("aria-expanded", String(!providerSettings.hidden));
+  });
+
+  apiProvider.addEventListener("change", function () {
+    var preset = apiProviderEntries[apiProvider.value];
+    if (!preset) return;
+    apiUrl.value = preset.apiUrl || "";
+    customModel.value = preset.model || "";
+    composerBackend.value = preset.backend || "api";
+    renderModelOptions(composerBackend.value, customModel.value);
+  });
+
+  saveProvider.addEventListener("click", function () {
+    var selected = selectedModel();
+    var modelId = customModel.value.trim() || (selected && selected.id) || "";
+    if (!modelId) {
+      composerError.textContent = "Enter a model ID.";
+      composerError.hidden = false;
+      return;
+    }
+    saveProvider.disabled = true;
+    saveProvider.textContent = "Saving…";
+    post("/api/settings", {
+      backend: composerBackend.value,
+      model: modelId,
+      reasoning: composerReasoning.value,
+      apiProvider: apiProvider.value,
+      apiUrl: apiUrl.value.trim(),
+      apiKey: apiKey.value.trim()
+    }).then(function () {
+      allModels.push({
+        backend: composerBackend.value,
+        id: modelId,
+        label: modelId,
+        provider: composerBackend.value
+      });
+      renderModelOptions(composerBackend.value, modelId);
+      apiKey.value = "";
+      credentialNote.textContent = "API key saved locally. Leave blank to keep it.";
+      providerSettings.hidden = true;
+      composerError.hidden = true;
+    }).catch(function (err) {
+      composerError.textContent = err.message || "Could not save provider.";
+      composerError.hidden = false;
+    }).then(function () {
+      saveProvider.disabled = false;
+      saveProvider.textContent = "Save provider";
+    });
+  });
+
   function saveModelSettings() {
     var model = selectedModel();
     if (!model) return;
     clearTimeout(settingsSaveTimer);
     settingsSaveTimer = setTimeout(function () {
       post("/api/settings", {
-        backend: model.backend,
+        backend: composerBackend.value || model.backend,
         model: model.id,
-        reasoning: composerReasoning.value
+        reasoning: composerReasoning.value,
+        apiProvider: activeState && activeState.apiProvider,
+        apiUrl: activeState && activeState.apiUrl
       }).catch(function (err) {
         composerError.textContent = err.message || "Could not save model.";
         composerError.hidden = false;
@@ -1245,8 +1410,8 @@ html[data-menubar="true"] .footnote { display: none; }
     post("/api/correct", {
       text: text,
       target: composerTarget.value,
-      backend: model && model.backend,
-      model: model && model.id,
+      backend: composerBackend.value || (model && model.backend),
+      model: (model && model.id) || customModel.value.trim(),
       reasoning: composerReasoning.value
     }).then(function (data) {
       showComposerResult(data);

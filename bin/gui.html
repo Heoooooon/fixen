@@ -464,6 +464,7 @@ button { background: none; border: 0; margin: 0; padding: 0; cursor: pointer; }
   padding-top: var(--space-3); border-top: 1px solid var(--rule-soft);
 }
 .provider-settings[hidden] { display: none; }
+.api-only[hidden] { display: none; }
 .api-provider, .setting-input, .save-provider {
   width: 100%; padding: 9px 10px; border: 1px solid var(--rule);
   border-radius: var(--radius-sm); background: var(--surface); color: var(--ink);
@@ -744,12 +745,12 @@ html[data-menubar="true"] .footnote { display: none; }
         </select>
       </div>
       <div class="provider-settings" id="provider-settings" hidden>
-        <select class="api-provider" id="api-provider" aria-label="API provider"></select>
+        <select class="api-provider api-only" id="api-provider" aria-label="API provider"></select>
         <input class="setting-input" id="custom-model" type="text" placeholder="Model ID">
-        <input class="setting-input" id="api-url" type="url" placeholder="https://api.example.com/v1">
-        <input class="setting-input" id="api-key" type="password" autocomplete="off" placeholder="API key">
-        <button class="save-provider" id="save-provider" type="button">Save provider</button>
-        <p class="credential-note" id="credential-note">Key is stored locally with 0600 permissions.</p>
+        <input class="setting-input api-only" id="api-url" type="url" placeholder="https://api.example.com/v1">
+        <input class="setting-input api-only" id="api-key" type="password" autocomplete="off" placeholder="API key">
+        <button class="save-provider" id="save-provider" type="button">Save backend</button>
+        <p class="credential-note api-only" id="credential-note">Key is stored locally with 0600 permissions.</p>
       </div>
     </form>
     <div class="composer-error" id="composer-error" role="alert" hidden></div>
@@ -1307,14 +1308,20 @@ html[data-menubar="true"] .footnote { display: none; }
   composerBackend.addEventListener("change", function () {
     renderModelOptions(composerBackend.value, "");
     customModel.value = "";
-    providerSettings.hidden = !["api", "openai"].includes(composerBackend.value);
-    settingsToggle.setAttribute("aria-expanded", String(!providerSettings.hidden));
+    updateSettingsFields();
   });
 
   settingsToggle.addEventListener("click", function () {
     providerSettings.hidden = !providerSettings.hidden;
     settingsToggle.setAttribute("aria-expanded", String(!providerSettings.hidden));
+    updateSettingsFields();
   });
+
+  function updateSettingsFields() {
+    var isApi = ["api", "openai"].includes(composerBackend.value);
+    var fields = providerSettings.querySelectorAll(".api-only");
+    for (var i = 0; i < fields.length; i++) fields[i].hidden = !isApi;
+  }
 
   apiProvider.addEventListener("change", function () {
     var preset = apiProviderEntries[apiProvider.value];
@@ -1359,7 +1366,7 @@ html[data-menubar="true"] .footnote { display: none; }
       composerError.hidden = false;
     }).then(function () {
       saveProvider.disabled = false;
-      saveProvider.textContent = "Save provider";
+      saveProvider.textContent = "Save backend";
     });
   });
 

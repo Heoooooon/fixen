@@ -559,7 +559,11 @@ html[data-menubar="true"] .shell::-webkit-scrollbar-thumb {
   background: rgba(255,255,255,.2); border-radius: 5px;
 }
 html[data-menubar="true"] .banner {
-  position: fixed; left: 16px; right: 16px; top: 16px; border-radius: 10px;
+  position: fixed; left: 16px; right: 16px; top: 10px;
+  padding: 9px 12px; border-radius: 10px;
+}
+html[data-menubar="true"] .banner[data-open="true"] ~ .shell .masthead {
+  margin-top: 48px;
 }
 html[data-menubar="true"] .banner-hint { display: none; }
 html[data-menubar="true"] .masthead {
@@ -709,7 +713,7 @@ html[data-menubar="true"] .footnote { display: none; }
   <section class="composer" aria-labelledby="composer-title">
     <div class="composer-head">
       <span class="composer-title" id="composer-title">Correct your text</span>
-      <span class="composer-shortcut" title="Correct text">⌘↩</span>
+      <span class="composer-shortcut" title="Enter to correct; Shift+Enter for a new line">↩</span>
     </div>
     <form id="composer-form">
       <div class="backend-row">
@@ -1432,7 +1436,7 @@ html[data-menubar="true"] .footnote { display: none; }
   });
 
   composerInput.addEventListener("keydown", function (ev) {
-    if ((ev.metaKey || ev.ctrlKey) && ev.key === "Enter") {
+    if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing && ev.keyCode !== 229) {
       ev.preventDefault();
       composerForm.requestSubmit();
     }

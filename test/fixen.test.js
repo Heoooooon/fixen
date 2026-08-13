@@ -14,8 +14,24 @@ const { spawnSync } = require("node:child_process");
 const { pathToFileURL } = require("node:url");
 
 const BIN = path.resolve(__dirname, "..", "bin", "fixen.js");
+const GUI = path.resolve(__dirname, "..", "bin", "gui.html");
 const SENPI_EXTENSION = path.resolve(__dirname, "..", "bin", "fixen-senpi-extension.mjs");
+const SENPI_EXTENSION_CORE = path.resolve(__dirname, "..", "bin", "fixen-history-core.mjs");
 const fx = require(BIN);
+
+test("menubar: closed connection banner leaves no visible strip", () => {
+  const gui = fs.readFileSync(GUI, "utf8");
+  assert.match(gui, /\.banner\s*\{[^}]*visibility:\s*hidden;/s);
+  assert.match(gui, /\.banner\[data-open="true"\]\s*\{[^}]*visibility:\s*visible;/s);
+});
+
+test("menubar: selected Sessions pane overrides dashboard hiding", () => {
+  const gui = fs.readFileSync(GUI, "utf8");
+  assert.match(
+    gui,
+    /html\[data-menubar="true"\]\[data-panel-view="sessions"\]\s+\.sessions-pane\s*\{[^}]*display:\s*block;/s
+  );
+});
 
 function tmpHome() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "fixen-test-"));
@@ -164,8 +180,27 @@ test("ruleText: full rule carries the target and optional note line", () => {
   const r = fx.ruleText({ target: "Japanese", lang: "Korean", explain: true });
   assert.match(r, /# fixen — Japanese correction rule/);
   assert.match(r, /written in Korean/);
+  assert.match(
+    r,
+    /\n`fixen` <corrected version of what the user wrote> · <one short reason per fix/
+  );
+  assert.doesNotMatch(r, /\*\*fixen\*\*|↳/);
+  assert.doesNotMatch(r, /^> /m);
   const plain = fx.ruleText({ target: "English", lang: "English", explain: false });
-  assert.doesNotMatch(plain, /↳/);
+  assert.match(plain, /\n`fixen` <corrected version of what the user wrote>\n/);
+  assert.doesNotMatch(plain, /one short reason per fix/);
+});
+
+test("pointerLine: footer template is one compact inline status", () => {
+  const line = fx.pointerLine(
+    { target: "English", lang: "Korean", explain: true },
+    "~/.config/fixen/RULE.md"
+  );
+  assert.match(
+    line,
+    /\\n`fixen` <corrected sentence, with \*\*bold\*\* on the changed words only> · <one short reason per fix, in Korean>/
+  );
+  assert.doesNotMatch(line, /\\n> |\\n↳|\*\*fixen\*\*/);
 });
 
 // -------------------------------------------------------------- parseArgs
@@ -290,62 +325,179 @@ test("install/uninstall: restores a file with no trailing newline exactly", () =
   assert.equal(fs.readFileSync(file, "utf8"), "no trailing newline");
 });
 
-test("install: senpi gets a sidecar input extension and uninstall removes it", () => {
+test("install: OMO and Senpi get sidecar extensions and uninstall removes them", () => {
   const home = tmpHome();
-  const extensionDir = path.join(home, ".senpi", "agent", "extensions");
-  fs.mkdirSync(extensionDir, { recursive: true });
-  const installed = path.join(extensionDir, "fixen-history.mjs");
+  const extensionDirs = [".omo", ".senpi"].map((root) =>
+    path.join(home, root, "agent", "extensions")
+  );
+  for (const extensionDir of extensionDirs) {
+    fs.mkdirSync(extensionDir, { recursive: true });
+  }
 
   assert.equal(run(["install"], home).status, 0);
-  const installedSource = fs.readFileSync(installed, "utf8");
-  assert.ok(installedSource.includes(BIN));
-  assert.ok(!installedSource.includes("__FIXEN_CLI_SCRIPT__"));
+  for (const extensionDir of extensionDirs) {
+    const installed = path.join(extensionDir, "fixen-history.mjs");
+    const installedCore = path.join(extensionDir, "fixen-history-core.mjs");
+    const installedSource = fs.readFileSync(installed, "utf8");
+    assert.ok(installedSource.includes(BIN));
+    assert.ok(!installedSource.includes("__FIXEN_CLI_SCRIPT__"));
+    assert.match(installedSource, /@earendil-works\/pi-tui/);
+    assert.ok(fs.existsSync(installedCore));
+  }
 
   assert.equal(run(["uninstall"], home).status, 0);
-  assert.ok(!fs.existsSync(installed));
+  for (const extensionDir of extensionDirs) {
+    assert.ok(!fs.existsSync(path.join(extensionDir, "fixen-history.mjs")));
+    assert.ok(!fs.existsSync(path.join(extensionDir, "fixen-history-core.mjs")));
+  }
 });
 
-test("senpi extension queues direct user input but ignores extension input", async () => {
+test("senpi extension renders a correction after the agent settles", async () => {
   const { registerFixenInputHook } = await import(
-    `${pathToFileURL(SENPI_EXTENSION).href}?test=${Date.now()}`
+    `${pathToFileURL(SENPI_EXTENSION_CORE).href}?test=${Date.now()}`
   );
-  const queued = [];
-  let inputHandler;
+  const handlers = {};
+  const entries = [];
+  let renderer;
+  let finishCorrection;
+  class FakeText {
+    constructor(text, left, top) {
+      this.text = text;
+      this.left = left;
+      this.top = top;
+    }
+  }
   registerFixenInputHook(
     {
       on(event, handler) {
-        if (event === "input") inputHandler = handler;
+        handlers[event] = handler;
+      },
+      registerEntryRenderer(type, render) {
+        assert.equal(type, "fixen-correction");
+        renderer = render;
+      },
+      appendEntry(type, data) {
+        entries.push({ type, data });
       },
     },
-    (text) => queued.push(text)
+    (text) => {
+      assert.equal(text, "i are ready");
+      return new Promise((resolve) => {
+        finishCorrection = resolve;
+      });
+    },
+    FakeText
   );
 
-  await inputHandler({ source: "interactive", text: "i are ready" });
-  await inputHandler({ source: "rpc", text: "he go home" });
-  await inputHandler({ source: "extension", text: "generated context" });
-  await inputHandler({ source: "interactive", text: "   " });
+  assert.deepEqual(
+    handlers.before_agent_start({ systemPrompt: "base prompt" }),
+    {
+      systemPrompt:
+        "base prompt\n\n" +
+        "Fixen's native sidecar is active for this session. " +
+        "Do not add a `fixen` correction footer to your response; " +
+        "the sidecar renders the correction separately after you settle.",
+    }
+  );
 
-  assert.deepEqual(queued, ["i are ready", "he go home"]);
+  await handlers.input({ source: "interactive", text: "i are ready" });
+  await handlers.input({ source: "extension", text: "generated context" });
+  await handlers.input({ source: "interactive", text: "   " });
+  assert.deepEqual(entries, []);
+
+  await handlers.agent_settled();
+  finishCorrection({
+    original: "i are ready",
+    corrected: "I am ready.",
+    notes: ["Subject-verb agreement"],
+    target: "English",
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(entries, [{
+    type: "fixen-correction",
+    data: {
+      original: "i are ready",
+      corrected: "I am ready.",
+      notes: ["Subject-verb agreement"],
+      target: "English",
+    },
+  }]);
+
+  const theme = {
+    bold: (text) => `<bold>${text}</bold>`,
+    fg: (color, text) => `<${color}>${text}</${color}>`,
+  };
+  const component = renderer(
+    { data: entries[0].data },
+    { expanded: false },
+    theme
+  );
+  assert.ok(component instanceof FakeText);
+  assert.equal(component.left, 1);
+  assert.equal(
+    component.text,
+    "<toolTitle><bold>fixen</bold></toolTitle> " +
+      "<accent>I am ready.</accent> " +
+      "<muted>· Subject-verb agreement</muted>"
+  );
 });
 
-test("senpi extension flushes hook input without overriding the CLI timeout", async () => {
+test("senpi extension returns structured notify output without overriding the CLI timeout", async () => {
   const { queueFixenPrompt } = await import(
-    `${pathToFileURL(SENPI_EXTENSION).href}?flush=${Date.now()}`
+    `${pathToFileURL(SENPI_EXTENSION_CORE).href}?flush=${Date.now()}`
   );
   const home = tmpHome();
-  const capture = path.join(home, "stdin.json");
+  const capture = path.join(home, "stdin.txt");
+  const argsCapture = path.join(home, "args.txt");
   const timeoutCapture = path.join(home, "timeout.txt");
   const cli = path.join(home, "capture-fixen");
+  const record = {
+    original: "fixen ok?",
+    corrected: "Is Fixen okay?",
+    notes: ["Natural question order"],
+    target: "English",
+  };
   fs.writeFileSync(
     cli,
-    `#!/bin/sh\nprintf %s \"$FIXEN_SIDECAR_TIMEOUT\" > \"${timeoutCapture}\"\ncat > \"${capture}\"\n`
+    `#!/bin/sh\n` +
+      `printf %s "$FIXEN_SIDECAR_TIMEOUT" > "${timeoutCapture}"\n` +
+      `printf %s "$*" > "${argsCapture}"\n` +
+      `cat > "${capture}"\n` +
+      `printf '%s\\n' '${JSON.stringify(record)}'\n`
   );
   fs.chmodSync(cli, 0o755);
 
-  await queueFixenPrompt("fixen ok?", { command: cli, script: null });
+  const result = await queueFixenPrompt("fixen ok?", { command: cli, script: null });
 
-  assert.deepEqual(JSON.parse(fs.readFileSync(capture, "utf8")), { prompt: "fixen ok?" });
+  assert.equal(fs.readFileSync(capture, "utf8"), "fixen ok?");
+  assert.equal(fs.readFileSync(argsCapture, "utf8"), "--notify --json -e");
   assert.equal(fs.readFileSync(timeoutCapture, "utf8"), process.env.FIXEN_SIDECAR_TIMEOUT || "");
+  assert.deepEqual(result, record);
+});
+
+test("notify: persists the coding-agent session ID", async () => {
+  const home = tmpHome();
+  const r = await runAsync(
+    [
+      "--notify",
+      "--json",
+      "-c",
+      `cat >/dev/null; printf 'CORRECTION\\nOriginal: this original sentence has a mistake\\nCorrected: This original sentence had a mistake.\\nNotes:\\n- tense'`,
+      "this original sentence has a mistake",
+    ],
+    home,
+    {
+      PI_SESSION_ID: "session-123",
+    }
+  );
+  assert.equal(r.status, 0, r.stderr);
+  const history = fs
+    .readFileSync(path.join(home, ".config", "fixen", "history.jsonl"), "utf8")
+    .trim()
+    .split("\n")
+    .map(JSON.parse);
+  assert.equal(history.at(-1).sessionId, "session-123");
 });
 
 test("status: exits 0 and reports the rule on a clean home", () => {
@@ -853,6 +1005,20 @@ test("notify: a correction is printed, stored, replayed by --last, and cleared",
   assert.equal(run(["--last"], home, env).status, 1);
 });
 
+test("notify: --json prints one structured correction record", () => {
+  const home = tmpHome();
+  const cmd = sidecarScript(home, CORRECTION_REPLY);
+  const r = run(["--notify", "--json", "-c", cmd, "its a beautiful day"], home, {
+    FIXEN_NOTIFY_DISABLE: "1",
+  });
+  assert.equal(r.status, 0, r.stderr);
+  const record = JSON.parse(r.stdout);
+  assert.equal(record.original, "its a beautiful day");
+  assert.equal(record.corrected, "it's a beautiful day");
+  assert.deepEqual(record.notes, ["소유격 its가 아니라 축약형 it's입니다"]);
+  assert.equal(record.target, "English");
+});
+
 test("notify: NO_CORRECTION stays silent and stores nothing", () => {
   const home = tmpHome();
   const cmd = sidecarScript(home, "NO_CORRECTION");
@@ -990,6 +1156,7 @@ test("sidecar flags: conflicting modes and stray text are rejected", () => {
     /only valid with --notify/
   );
   assert.match(run(["--notify", "--job", "../escape"], home).stderr, /invalid sidecar job id/);
+  assert.match(run(["--json", "text"], home).stderr, /only valid with --notify/);
 });
 
 // ---------------------------------------------------- notification content
@@ -1311,6 +1478,25 @@ test("history: one pathological correction is bounded to 64 KiB", () => {
   });
   assert.equal(r.status, 0, r.stderr);
   assert.ok(fs.statSync(HISTORY_FILE(home)).size <= 64 * 1024 + 1);
+});
+
+test("groupHistorySessions: uses source IDs then thirty-minute activity windows", () => {
+  const records = [
+    { id: "a", sessionId: "chat-1", createdAt: "2026-08-13T12:00:00.000Z", corrected: "One." },
+    { id: "b", sessionId: "chat-1", createdAt: "2026-08-13T10:00:00.000Z", corrected: "Two." },
+    { id: "c", createdAt: "2026-08-13T09:45:00.000Z", corrected: "Three." },
+    { id: "d", createdAt: "2026-08-13T09:20:00.000Z", corrected: "Four." },
+    { id: "e", createdAt: "2026-08-13T08:30:00.000Z", corrected: "Five." },
+  ];
+
+  const sessions = fx.groupHistorySessions(records);
+  assert.equal(sessions.length, 3);
+  assert.deepEqual(sessions.map((session) => session.count), [2, 2, 1]);
+  assert.equal(sessions[0].sourceId, "chat-1");
+  assert.equal(sessions[0].preview, "One.");
+  assert.deepEqual(sessions[1].records.map((record) => record.id), ["c", "d"]);
+  assert.equal(sessions[1].startedAt, records[3].createdAt);
+  assert.equal(sessions[1].endedAt, records[2].createdAt);
 });
 
 // ------------------------------------------------------------------- gui

@@ -973,6 +973,9 @@ function boundedHistoryRecord(record) {
       ? record.notes.slice(0, 20).map((note) => clipUtf8(note, 2048))
       : [],
   };
+  if (typeof record.sessionId === "string" && record.sessionId.trim()) {
+    bounded.sessionId = clipUtf8(record.sessionId.trim(), 256);
+  }
   while (Buffer.byteLength(JSON.stringify(bounded)) > HISTORY_RECORD_BYTE_LIMIT) {
     const originalBytes = Buffer.byteLength(bounded.original);
     const correctedBytes = Buffer.byteLength(bounded.corrected);
@@ -1062,6 +1065,56 @@ function loadHistory() {
     } catch {}
   }
   return records.reverse();
+}
+
+function groupHistorySessions(records, gapMs = 30 * 60 * 1000) {
+  const ordered = records
+    .filter((record) => record && record.id && Number.isFinite(Date.parse(record.createdAt)))
+    .slice()
+    .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
+  const sessions = [];
+  const sourced = new Map();
+
+  for (const record of ordered) {
+    const sourceId =
+      typeof record.sessionId === "string" && record.sessionId.trim()
+        ? record.sessionId.trim()
+        : "";
+    let session = sourceId ? sourced.get(sourceId) : null;
+    if (!session && !sourceId) {
+      const previous = sessions[sessions.length - 1];
+      if (
+        previous &&
+        !previous.sourceId &&
+        previous.startedAt.slice(0, 10) === record.createdAt.slice(0, 10) &&
+        Date.parse(previous.startedAt) - Date.parse(record.createdAt) <= gapMs
+      ) {
+        session = previous;
+      }
+    }
+    if (!session) {
+      session = {
+        id: sourceId ? `source:${sourceId}` : `activity:${record.id}`,
+        sourceId,
+        startedAt: record.createdAt,
+        endedAt: record.createdAt,
+        preview: record.corrected || record.original || "",
+        count: 0,
+        records: [],
+      };
+      sessions.push(session);
+      if (sourceId) sourced.set(sourceId, session);
+    }
+    session.records.push(record);
+    session.count += 1;
+    if (Date.parse(record.createdAt) < Date.parse(session.startedAt)) {
+      session.startedAt = record.createdAt;
+    }
+    if (Date.parse(record.createdAt) > Date.parse(session.endedAt)) {
+      session.endedAt = record.createdAt;
+    }
+  }
+  return sessions;
 }
 
 function deleteHistoryEntry(id) {
@@ -1369,6 +1422,8 @@ async function notifyMessage(message, opts, provenance = [String(message)]) {
     corrected: parsed.corrected,
     notes: parsed.notes,
   };
+  const sessionId = String(process.env.PI_SESSION_ID || "").trim();
+  if (sessionId) record.sessionId = sessionId;
   await withSidecarLock(async () => {
     if (!boolish(process.env.FIXEN_SIDECAR_NO_STORE)) {
       saveLastCorrection(record);
@@ -1661,6 +1716,7 @@ async function handleGuiRequest(req, res, opts) {
     const models = await availableModels(opts);
     const config = loadConfig();
     const credentials = loadCredentials();
+    const history = loadHistory();
     res.end(JSON.stringify({
       version: VERSION,
       target: opts.target,
@@ -1674,7 +1730,8 @@ async function handleGuiRequest(req, res, opts) {
       apiProvider: config.apiProvider || "",
       apiUrl: config.apiUrl || "",
       hasApiKey: Boolean(credentials.apiKey),
-      history: loadHistory(),
+      history,
+      sessions: groupHistorySessions(history),
       draft: loadComposeDraft(),
     }));
     return;
@@ -1888,8 +1945,17 @@ const RULE_FILE_TILDE = RULE_FILE.startsWith(os.homedir()) ? "~" + RULE_FILE.sli
 // Custom targets added via --file are recorded here so uninstall/status find them.
 const MANIFEST_FILE = path.join(path.dirname(CONFIG_PATH), "installed.json");
 const SENPI_EXTENSION_SOURCE = path.join(__dirname, "fixen-senpi-extension.mjs");
-const SENPI_EXTENSION_DIR = path.join(os.homedir(), ".senpi", "agent", "extensions");
-const SENPI_EXTENSION_FILE = path.join(SENPI_EXTENSION_DIR, "fixen-history.mjs");
+const SENPI_EXTENSION_CORE_SOURCE = path.join(__dirname, "fixen-history-core.mjs");
+const SENPI_EXTENSION_DIRS = [".omo", ".senpi", ".pi"].map((root) =>
+  path.join(os.homedir(), root, "agent", "extensions")
+);
+
+function senpiExtensionFiles(dir) {
+  return {
+    extension: path.join(dir, "fixen-history.mjs"),
+    core: path.join(dir, "fixen-history-core.mjs"),
+  };
+}
 
 function target(name, baseParts, fileParts, opts = {}) {
   return {
@@ -1966,11 +2032,11 @@ function removeManagedBlock(content, removeAddedSeparator = false) {
 function pointerLine({ target, lang, explain }, pointer) {
   // `\\n` stays escaped: it must reach the model as the two characters \n
   // inside the quoted footer template, not as a real newline in the file.
-  const note = explain ? `\\n> ↳ <one short reason per fix, in ${lang}>` : "";
+  const note = explain ? ` · <one short reason per fix, in ${lang}>` : "";
   const watched = /^auto$/i.test(String(target).trim()) ? "English or Korean" : target;
   return (
     `${START_MARK} fixen: if the ${watched} the user wrote themselves in their latest message ` +
-    `has mistakes (ignore pasted text/code/quotes), append "\\n> **fixen** · <corrected sentence, ` +
+    `has mistakes (ignore pasted text/code/quotes), append "\\n\`fixen\` <corrected sentence, ` +
     `with **bold** on the changed words only>${note}" ` +
     `after your normal answer; if it is correct, append nothing. Full rule: ${pointer} ${END_MARK}`
   );
@@ -1988,12 +2054,14 @@ The user is practicing ${t}. In EVERY reply, after answering normally, review th
 
 If their ${t} contains grammar, spelling, or naturalness mistakes, end the reply with this footer:
 
-> **fixen** · <corrected version of what the user wrote>${explain ? `\n> ↳ <one short reason per fix, written in ${lang}>` : ""}
+\`fixen\` <corrected version of what the user wrote>${explain ? ` · <one short reason per fix, written in ${lang}>` : ""}
 
 Rules:
-- Every footer line starts with \`> \` so it renders as one quoted block, set apart from the answer.
+- Never prefix footer lines with \`> \`; blockquotes render dim and italic in terminal agents.
+- Keep the entire footer on one line. Use the inline-code \`fixen\` label as a compact status badge.
 - Inside the corrected sentence, bold **only the words you changed** (\`I **am** going\`, \`됐지**?**\`). Never bold the whole sentence, and never wrap it in backticks — a backtick span stretches CJK text.
-- One corrected line per mistaken sentence; skip sentences that are already fine. The \`**fixen** ·\` label appears once; further corrected sentences get their own \`> \` line without it.
+- Join multiple brief reasons with \` · \`; do not create a reason list or additional footer lines.
+- Correct only mistaken sentences. If several sentences need fixes, combine them into one concise corrected passage after the \`fixen\` label.
 - If the user's ${t} is fully correct and natural, or the message contains no user-written ${t}, append nothing — no footer at all.
 - The footer never replaces or shortens the actual answer.`;
 }
@@ -2030,14 +2098,19 @@ function cmdInstall(opts) {
     process.stdout.write(`${OUT.green("ok")}    ${OUT.bold(t.name)}: ${t.file} ${OUT.dim("(one line added)")}\n`);
   }
   atomicWriteFile(MANIFEST_FILE, JSON.stringify({ targets: installedTargets }, null, 2) + "\n");
-  if (fs.existsSync(path.dirname(SENPI_EXTENSION_DIR))) {
-    fs.mkdirSync(SENPI_EXTENSION_DIR, { recursive: true });
-    const extension = fs
-      .readFileSync(SENPI_EXTENSION_SOURCE, "utf8")
-      .replace('"__FIXEN_CLI_SCRIPT__"', JSON.stringify(__filename));
-    atomicWriteFile(SENPI_EXTENSION_FILE, extension);
+  const extension = fs
+    .readFileSync(SENPI_EXTENSION_SOURCE, "utf8")
+    .replace('"__FIXEN_CLI_SCRIPT__"', JSON.stringify(__filename));
+  const extensionCore = fs.readFileSync(SENPI_EXTENSION_CORE_SOURCE, "utf8");
+  for (const dir of SENPI_EXTENSION_DIRS) {
+    if (!fs.existsSync(path.dirname(dir))) continue;
+    fs.mkdirSync(dir, { recursive: true });
+    const files = senpiExtensionFiles(dir);
+    atomicWriteFile(files.extension, extension);
+    atomicWriteFile(files.core, extensionCore);
     process.stdout.write(
-      `${OUT.green("ok")}    ${OUT.bold("senpi")}: ${SENPI_EXTENSION_FILE} ${OUT.dim("(input sidecar)")}\n`
+      `${OUT.green("ok")}    ${OUT.bold(path.basename(path.dirname(path.dirname(dir))))}: ` +
+      `${files.extension} ${OUT.dim("(input sidecar)")}\n`
     );
   }
   const installedTarget = /^auto$/i.test(String(opts.target).trim())
@@ -2074,9 +2147,14 @@ function cmdUninstall() {
       process.stdout.write(`${OUT.green("ok")}    removed: ${OUT.dim(f)}\n`);
     }
   }
-  if (fs.existsSync(SENPI_EXTENSION_FILE)) {
-    fs.rmSync(SENPI_EXTENSION_FILE);
-    process.stdout.write(`${OUT.green("ok")}    ${OUT.bold("senpi")}: removed\n`);
+  for (const dir of SENPI_EXTENSION_DIRS) {
+    const files = senpiExtensionFiles(dir);
+    if (!fs.existsSync(files.extension) && !fs.existsSync(files.core)) continue;
+    fs.rmSync(files.extension, { force: true });
+    fs.rmSync(files.core, { force: true });
+    process.stdout.write(
+      `${OUT.green("ok")}    ${OUT.bold(path.basename(path.dirname(path.dirname(dir))))}: removed\n`
+    );
   }
   if (fs.existsSync(SERVICE_BUNDLE)) {
     fs.rmSync(SERVICE_BUNDLE, { recursive: true, force: true });
@@ -2623,6 +2701,7 @@ Usage:
   fixen --notify [options] <sentence...>
       correct user-written prose and show a desktop notification only when a
       change is needed; saves the exact corrected excerpt for --last and --ask
+      --json prints the structured correction for integrations
   fixen --hook [options]
       prompt-submit adapter: validate hook JSON from stdin, queue --notify in a
       detached worker, and exit immediately without delaying the AI agent
@@ -2667,6 +2746,7 @@ Options:
   -r, --reasoning <e>    (openai) reasoning effort: none|minimal|low|medium|high
   -f, --file <path>      (install) extra instruction file to add the line to
       --notify           sidecar-correct the supplied text and notify
+      --json             (notify) print the correction as one JSON object
       --polish           correct, show what changed, and copy to the clipboard
       --gui              serve the history dashboard on 127.0.0.1 and open it
       --port <n>         (gui) port to bind (default 5177; 0 = random free port)
@@ -2759,6 +2839,7 @@ function parseArgs(argv) {
       case "-e": case "--explain": opts.explain = true; break;
       case "--no-explain": opts.explain = false; break;
       case "--notify": opts.notify = true; break;
+      case "--json": opts.json = true; break;
       case "--polish": opts.polish = true; break;
       case "--hook": opts.hook = true; break;
       case "--last": opts.last = true; break;
@@ -2844,6 +2925,7 @@ async function main() {
     .filter(Boolean).length;
   if (modes > 1) fail("use only one of --notify, --polish, --hook, --last, --copy, --ask, --clear, or --gui");
   if (opts.job && !opts.notify) fail("--job is only valid with --notify");
+  if (opts.json && !opts.notify) fail("--json is only valid with --notify");
   if (opts.port !== undefined && !opts.gui) fail("--port is only valid with --gui");
 
   if (opts.gui) {
@@ -2944,7 +3026,9 @@ async function main() {
       fail(e.message);
     }
     done();
-    if (record) process.stdout.write(formatCorrection(record) + "\n");
+    if (record) {
+      process.stdout.write((opts.json ? JSON.stringify(record) : formatCorrection(record)) + "\n");
+    }
     return;
   }
 
@@ -3045,6 +3129,7 @@ module.exports = {
   loadHistory,
   deleteHistoryEntry,
   clearHistory,
+  groupHistorySessions,
   START_MARK,
   END_MARK,
   buildPrompt,

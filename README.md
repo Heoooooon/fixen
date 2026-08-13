@@ -100,7 +100,9 @@ The footer is useful context for follow-up questions, but it cannot appear until
 ```text
 prompt submitted
 ├─ AI agent → normal work → footer when the reply finishes
-└─ fixen hook → detached worker → desktop notification as soon as it is ready
+└─ fixen sidecar → correction result
+   ├─ Senpi → compact native `fixen` row after the agent settles
+   └─ other tools → desktop notification as soon as it is ready
 ```
 
 Use the commands directly:
@@ -113,6 +115,19 @@ fixen --clear
 ```
 
 `--notify` filters generated context, code, logs, quotes, URLs, and common secret assignments before invoking the backend. Already-natural writing produces no notification. Only the exact original excerpt selected for correction—not the complete chat prompt—is saved to the private `~/.config/fixen/last-correction.json`. The record expires after 24 hours and each result replaces the previous one. `--last` prints it, `--ask` sends that minimal correction plus your question to the configured backend, and `--clear` deletes it immediately. Set `FIXEN_SIDECAR_NO_STORE=1` to avoid saving the new result; an older saved correction is left untouched.
+
+When Senpi is installed, `fixen install` also installs a native input extension.
+It starts the same sidecar on prompt submission, then adds one compact,
+theme-aware transcript row after the main agent settles:
+
+```text
+fixen Is Fixen okay? · Natural question order
+```
+
+The label, corrected sentence, and first reason use separate semantic colors,
+so the result is recognizable like Senpi's built-in tool rows. Expanding the
+row shows the original text and any additional reasons. The row is a
+TUI-only session entry and is never added to model context.
 
 For an AI tool with a prompt-submit hook, configure the hook command as:
 

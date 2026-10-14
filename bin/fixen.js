@@ -33,19 +33,25 @@ const JOB_DIR = path.join(CONFIG_DIR, "jobs");
 const MODEL_CATALOG_TTL_MS = 5 * 60 * 1000;
 let modelCatalogCache;
 
-function atomicWriteFile(file, content, mode = 0o600) {
+function atomicWriteFile(file, content, mode = 0o600, preserveMode = true) {
   let target = file;
+  let entry;
   try {
-    if (fs.lstatSync(file).isSymbolicLink()) target = fs.realpathSync(file);
+    entry = fs.lstatSync(file);
   } catch (e) {
     if (e.code !== "ENOENT") throw e;
   }
+  // A dangling symlink is still an existing user path. Resolve symlinks
+  // outside the ENOENT catch so we fail instead of replacing the link itself.
+  if (entry?.isSymbolicLink()) target = fs.realpathSync(file);
   fs.mkdirSync(path.dirname(target), { recursive: true, mode: 0o700 });
   let existingMode = mode;
-  try {
-    existingMode = fs.statSync(target).mode & 0o777;
-  } catch (e) {
-    if (e.code !== "ENOENT") throw e;
+  if (preserveMode) {
+    try {
+      existingMode = fs.statSync(target).mode & 0o777;
+    } catch (e) {
+      if (e.code !== "ENOENT") throw e;
+    }
   }
   const tmp = path.join(
     path.dirname(target),
@@ -174,7 +180,11 @@ function updateConfig(patch) {
 
 function loadCredentials() {
   try {
-    const value = JSON.parse(fs.readFileSync(CREDENTIALS_PATH, "utf8"));
+    const raw = fs.readFileSync(CREDENTIALS_PATH, "utf8");
+    // Credentials are secrets, not ordinary config. Repair permissions from
+    // older installs before parsing so an existing 0644 file never stays public.
+    fs.chmodSync(CREDENTIALS_PATH, 0o600);
+    const value = JSON.parse(raw);
     return value && typeof value === "object" && !Array.isArray(value) ? value : {};
   } catch (e) {
     if (e.code !== "ENOENT" && !(e instanceof SyntaxError)) throw e;
@@ -187,7 +197,7 @@ function updateCredentials(patch) {
   for (const [key, value] of Object.entries(next)) {
     if (value === undefined || value === null || value === "") delete next[key];
   }
-  atomicWriteFile(CREDENTIALS_PATH, JSON.stringify(next, null, 2) + "\n");
+  atomicWriteFile(CREDENTIALS_PATH, JSON.stringify(next, null, 2) + "\n", 0o600, false);
   return next;
 }
 
@@ -1853,8 +1863,15 @@ async function handleGuiRequest(req, res, opts) {
           if (parsed.protocol !== "https:" && parsed.hostname !== "127.0.0.1" && parsed.hostname !== "localhost") {
             return sendJson(400, { error: "API URL must use HTTPS (except localhost)" });
           }
+          const existingCredentials = loadCredentials();
+          const existingApiUrl = loadConfig().apiUrl || "";
+          // Possession of the GUI capability alone must not let someone redirect
+          // an already stored Bearer token to a different server.
+          if (!requestedApiKey && existingCredentials.apiKey && requestedApiUrl !== existingApiUrl) {
+            return sendJson(400, { error: "API key must be re-entered when changing API URL" });
+          }
           if (requestedApiKey) updateCredentials({ apiKey: requestedApiKey });
-          if (!requestedApiKey && !loadCredentials().apiKey) {
+          if (!requestedApiKey && !existingCredentials.apiKey) {
             return sendJson(400, { error: "API key is required" });
           }
         }
@@ -2183,7 +2200,7 @@ function cmdDoctor(opts) {
   const backend = opts.command ? "custom" : (opts.backend || detectBackend());
   const httpBackend = backend === "api" || backend === "openai";
   const backendReady = backend === "custom"
-    || (httpBackend && Boolean(process.env.FIXEN_API_KEY || process.env.OPENAI_API_KEY))
+    || (httpBackend && Boolean(opts.apiKey))
     || (Boolean(BACKENDS[backend]) && which(backend));
   add(Boolean(backendReady), "backend", backendReady ? backend : `${backend || "none"} is not available`);
 
@@ -2524,6 +2541,11 @@ function cmdHotkey() {
 const REGISTRY = (process.env.FIXEN_REGISTRY || "https://registry.npmjs.org").replace(/\/$/, "");
 const PKG_ROOT = path.resolve(__dirname, "..");
 
+function validPackageVersion(version) {
+  return typeof version === "string" &&
+    /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.test(version);
+}
+
 // Semver-lite: numeric triple wins, then prerelease (any prerelease < release).
 // Enough for our own tags; we never compare arbitrary ranges.
 function cmpVersions(a, b) {
@@ -2580,7 +2602,7 @@ async function latestVersion() {
   }
   if (!res.ok) fail(`registry HTTP ${res.status} for ${PKG.name}`);
   const version = (await res.json()).version;
-  if (typeof version !== "string") fail("registry returned no version");
+  if (!validPackageVersion(version)) fail("registry returned an invalid version");
   return version;
 }
 
@@ -2612,14 +2634,24 @@ function runUpgrade(spec) {
   const custom = process.env.FIXEN_UPDATE_CMD;
   if (custom) {
     if (IS_WIN) fail("FIXEN_UPDATE_CMD needs a POSIX shell; run fixen under WSL on Windows.");
-    if (!custom.includes("{spec}")) fail("FIXEN_UPDATE_CMD must contain {spec} — it expands to fixen-cli@latest");
+    if (!custom.includes("{spec}")) fail("FIXEN_UPDATE_CMD must contain {spec} — it expands to fixen-cli@<checked-version>");
     const cmd = custom.replaceAll("{spec}", spec);
     process.stdout.write(OUT.dim(`run   ${cmd}`) + "\n");
     return spawnSync("/bin/sh", ["-c", cmd], { stdio: "inherit" });
   }
-  const argv = UPGRADE_ARGV[detectManager()](spec);
+  const manager = detectManager();
+  const argv = UPGRADE_ARGV[manager](spec);
   process.stdout.write(OUT.dim(`run   ${argv.join(" ")}`) + "\n");
-  return spawnSync(argv[0], argv.slice(1), { stdio: "inherit", shell: IS_WIN });
+  // Keep the metadata check and package download on the same registry. These
+  // cover npm/pnpm, Yarn, and Bun without interpolating registry data into a shell.
+  const env = {
+    ...process.env,
+    npm_config_registry: REGISTRY,
+    NPM_CONFIG_REGISTRY: REGISTRY,
+    YARN_NPM_REGISTRY_SERVER: REGISTRY,
+    BUN_CONFIG_REGISTRY: REGISTRY,
+  };
+  return spawnSync(argv[0], argv.slice(1), { stdio: "inherit", shell: IS_WIN, env });
 }
 
 function chatInstalled() {
@@ -2681,7 +2713,7 @@ async function cmdUpdate(opts) {
     process.exit(1);
   }
 
-  const r = runUpgrade(`${PKG.name}@latest`);
+  const r = runUpgrade(`${PKG.name}@${latest}`);
   if (r.error) fail(`upgrade failed: ${r.error.message}`);
   if (r.status !== 0) fail(`upgrade exited with code ${r.status}`);
   process.stdout.write(`${OUT.green("ok")}    upgraded to ${OUT.bold(latest)}\n`);
@@ -2783,7 +2815,7 @@ Environment:
   FIXEN_GUI_NO_OPEN         1/true to start --gui without opening the browser
   FIXEN_HOTKEY_NO_REGISTER  1/true to skip binding the default ⌃⌥⌘F shortcut
   FIXEN_REGISTRY            npm registry for update (default: registry.npmjs.org)
-  FIXEN_UPDATE_CMD          custom upgrade command; must contain {spec} → fixen-cli@latest
+  FIXEN_UPDATE_CMD          custom upgrade command; must contain {spec} → fixen-cli@checked-version
   FIXEN_DEBUG               1 to print stack traces on unexpected errors
 
 Config (~/.config/fixen/config.json):
@@ -3148,6 +3180,7 @@ module.exports = {
   responsesText,
   boolish,
   cmpVersions,
+  validPackageVersion,
   pointerLine,
   ruleText,
   parseArgs,

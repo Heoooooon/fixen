@@ -1878,11 +1878,9 @@ test("history: a changed --polish correction is recorded with notes", () => {
   const home = tmpHome();
   const reply = "Corrected: it's a beautiful day\nNotes:\n- its → it's";
   const cmd = sidecarScript(home, reply, "polish.sh");
-  // Stub pbcopy so the test never touches the real clipboard.
-  fs.writeFileSync(path.join(home, "pbcopy"), "#!/bin/sh\ncat >/dev/null\n", { mode: 0o755 });
-  const r = run(["--polish", "-e", "-c", cmd, "its a beautiful day"], home, {
-    PATH: `${home}:${process.env.PATH}`,
-  });
+  // Stub every platform clipboard command so the test never touches the real clipboard.
+  const { PATH } = clipboardStub(home);
+  const r = run(["--polish", "-e", "-c", cmd, "its a beautiful day"], home, { PATH });
   assert.equal(r.status, 0, r.stderr);
   const rec = JSON.parse(fs.readFileSync(HISTORY_FILE(home), "utf8").trim());
   assert.equal(rec.corrected, "it's a beautiful day");

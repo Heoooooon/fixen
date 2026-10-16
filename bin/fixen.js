@@ -1617,6 +1617,10 @@ function loadJob(id) {
 // files ship it. Zero dependencies: node:http plus the helpers above.
 
 const GUI_PAGE = path.join(__dirname, "gui.html");
+// Single-executable builds (the macOS app's bundled CLI, built from
+// scripts/sidecar-entry.mjs) carry the page in memory: their __dirname is the
+// build machine's checkout, which does not exist on the user's Mac.
+const EMBEDDED_GUI_PAGE = typeof globalThis.__FIXEN_GUI_PAGE === "string" ? globalThis.__FIXEN_GUI_PAGE : null;
 const GUI_BODY_LIMIT = 64 * 1024;
 
 function readRequestBody(req) {
@@ -1683,7 +1687,7 @@ async function handleGuiRequest(req, res, opts) {
   if (isPage) {
     let page;
     try {
-      page = fs.readFileSync(GUI_PAGE);
+      page = EMBEDDED_GUI_PAGE ?? fs.readFileSync(GUI_PAGE);
     } catch {
       sendJson(500, { error: `gui page missing: ${GUI_PAGE}` });
       return;
@@ -2227,7 +2231,7 @@ function cmdDoctor(opts) {
         ? "notify-send"
         : null;
   add(Boolean(notifier), "notification", notifier || "no supported notifier found");
-  add(fs.existsSync(GUI_PAGE), "dashboard", GUI_PAGE);
+  add(EMBEDDED_GUI_PAGE !== null || fs.existsSync(GUI_PAGE), "dashboard", EMBEDDED_GUI_PAGE !== null ? "embedded" : GUI_PAGE);
   add(true, "runtime", `Node ${process.versions.node} · fixen ${VERSION}`);
 
   for (const check of checks) {
@@ -3148,7 +3152,7 @@ async function main() {
 
 // Run only when executed directly, so tests can require() the pure functions
 // below without triggering the CLI (and its process.exit paths).
-if (require.main === module) {
+if (require.main === module || globalThis.__FIXEN_SIDECAR_MAIN === true) {
   main().catch((e) => {
     if (process.env.FIXEN_DEBUG) process.stderr.write((e.stack || String(e)) + "\n");
     fail(e.message);

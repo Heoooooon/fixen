@@ -1828,16 +1828,73 @@ test("hotkey: status reports it and uninstall removes it", { skip: !DARWIN }, ()
   assert.doesNotMatch(st2.stdout, /hotkey: on/);
 });
 
-test("hotkey: the pbs entry is old-style-plist quoted so defaults can parse it", () => {
-  const args = fx.hotkeyDefaultsArgs();
-  assert.equal(args[0], "write");
-  assert.equal(args[1], "pbs");
-  assert.equal(args[2], "NSServicesStatus");
-  assert.equal(args[3], "-dict-add");
-  // An unquoted "(null) - ..." key is parsed by `defaults` as a plist array
-  // and rejected; the literal double quotes make it an old-style string.
-  assert.equal(args[4], '"(null) - Fix with fixen - runWorkflowAsService"');
-  assert.match(args[5], /key_equivalent = "\^~@f"/);
+test("hotkey: #5 registers both service identities and uninstall preserves unrelated preferences", { skip: !DARWIN }, () => {
+  const home = tmpHome();
+  const domain = `cli.fixen.test.${path.basename(home)}`;
+  const tools = path.join(home, "tools");
+  fs.mkdirSync(tools);
+  // Use the real macOS preference tools against an owned suite. HOME alone
+  // does not isolate cfprefsd; redirect only the pbs domain at this boundary.
+  for (const tool of ["defaults", "osascript"]) {
+    const file = path.join(tools, tool);
+    fs.writeFileSync(file, `#!${process.execPath}
+const { spawnSync } = require("node:child_process");
+const args = process.argv.slice(2).map(arg => arg === "pbs" ? ${JSON.stringify(domain)} : arg);
+const r = spawnSync(${JSON.stringify(`/usr/bin/${tool}`)}, args, { stdio: "inherit", timeout: 10000 });
+process.exit(r.status === null ? 1 : r.status);
+`);
+    fs.chmodSync(file, 0o755);
+  }
+  const defaults = (args) => {
+    const r = spawnSync("/usr/bin/defaults", args, { encoding: "utf8", timeout: 5000 });
+    assert.equal(r.status, 0, r.stderr);
+    return r.stdout;
+  };
+  const read = () => {
+    const xml = defaults(["export", domain, "-"]);
+    const r = spawnSync("/usr/bin/plutil", ["-convert", "json", "-o", "-", "-"], {
+      input: xml, encoding: "utf8", timeout: 5000,
+    });
+    assert.equal(r.status, 0, r.stderr);
+    return JSON.parse(r.stdout);
+  };
+  const env = { PATH: `${tools}:${process.env.PATH}`, FIXEN_HOTKEY_NO_REGISTER: "0" };
+  try {
+    defaults(["write", domain, "unrelated", "-string", "keep"]);
+    defaults(["write", domain, "NSServicesStatus", "-dict-add",
+      '"other.bundle - Other service - perform"', '{ key_equivalent = "@$o"; enabled_services_menu = 0; }']);
+    const before = read();
+    const installed = run(["hotkey"], home, env);
+    assert.equal(installed.status, 0, installed.stderr);
+    const info = spawnSync("/usr/bin/plutil", ["-convert", "json", "-o", "-",
+      path.join(SERVICE_DIR(home), "Contents", "Info.plist")], { encoding: "utf8", timeout: 5000 });
+    assert.equal(info.status, 0, info.stderr);
+    const metadata = JSON.parse(info.stdout);
+    const service = metadata.NSServices[0];
+    const suffix = ` - ${service.NSMenuItem.default} - ${service.NSMessage}`;
+    const registered = read();
+    for (const id of [metadata.CFBundleIdentifier, "(null)"]) {
+      assert.equal(registered.NSServicesStatus[id + suffix]?.key_equivalent, "@~^f");
+    }
+    assert.equal(registered.unrelated, before.unrelated);
+    assert.deepEqual(registered.NSServicesStatus["other.bundle - Other service - perform"],
+      before.NSServicesStatus["other.bundle - Other service - perform"]);
+
+    const removed = run(["uninstall"], home, env);
+    assert.equal(removed.status, 0, removed.stderr);
+    assert.deepEqual(read(), before);
+    assert.equal(run(["uninstall"], home, env).status, 0);
+    assert.deepEqual(read(), before);
+  } finally {
+    const deleted = spawnSync("/usr/bin/defaults", ["delete", domain], { timeout: 5000 });
+    // defaults clears the domain but leaves an empty plist. Native preferences
+    // use the account home, regardless of the test's HOME environment.
+    const plist = path.join(os.userInfo().homedir, "Library", "Preferences", `${domain}.plist`);
+    fs.rmSync(plist, { force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+    assert.equal(deleted.status, 0);
+    assert.ok(!fs.existsSync(plist));
+  }
 });
 
 // ------------------------------------------------- history: all paths

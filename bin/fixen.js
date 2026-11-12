@@ -2181,6 +2181,7 @@ function cmdUninstall() {
     fs.rmSync(SERVICE_BUNDLE, { recursive: true, force: true });
     process.stdout.write(`${OUT.green("ok")}    ${OUT.bold("hotkey")}: removed\n`);
   }
+  unregisterHotkeyShortcut();
 }
 
 function onOff(installed) {
@@ -2248,8 +2249,9 @@ function cmdDoctor(opts) {
 // behavior from macOS itself — no accessibility API, no key simulation.
 
 const SERVICE_NAME = "Fix with fixen";
+const SERVICE_ID = "cli.fixen.hotkey";
 const SERVICE_BUNDLE = path.join(os.homedir(), "Library", "Services", `${SERVICE_NAME}.workflow`);
-const DEFAULT_HOTKEY = "^~@f"; // Ctrl+Opt+Cmd+F in pbs notation
+const DEFAULT_HOTKEY = "@~^f"; // Cmd+Opt+Ctrl+F, as written by System Settings
 
 function xmlEscape(s) {
   return String(s).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
@@ -2275,7 +2277,7 @@ function hotkeyInfoPlist() {
 <plist version="1.0">
 <dict>
 	<key>CFBundleIdentifier</key>
-	<string>cli.fixen.hotkey</string>
+	<string>${SERVICE_ID}</string>
 	<key>CFBundleName</key>
 	<string>${xmlEscape(SERVICE_NAME)}</string>
 	<key>CFBundleShortVersionString</key>
@@ -2500,13 +2502,35 @@ function hotkeyWorkflowPlist() {
 // Best-effort: pre-assign the keyboard shortcut in the pasteboard server's
 // services registry. Harmless if it fails — the user can always set one in
 // System Settings > Keyboard > Keyboard Shortcuts > Services.
-// The entry key starts with "(" — unquoted, `defaults` tries to parse it as
-// an old-style plist array and rejects it. Literal double quotes make it a
-// quoted plist string.
+// pbs identifies the service by bundle ID, menu title and method. Keep the
+// legacy null-ID alias too. Quote keys so defaults parses them as strings.
 function hotkeyDefaultsArgs() {
   return ["write", "pbs", "NSServicesStatus", "-dict-add",
-    `"(null) - ${SERVICE_NAME} - runWorkflowAsService"`,
-    `{ key_equivalent = "${DEFAULT_HOTKEY}"; enabled_context_menu = 1; enabled_services_menu = 1; }`];
+    ...[SERVICE_ID, "(null)"].flatMap(id => [
+      `"${id} - ${SERVICE_NAME} - runWorkflowAsService"`,
+      `{ key_equivalent = "${DEFAULT_HOTKEY}"; enabled_context_menu = 1; enabled_services_menu = 1; }`,
+    ])];
+}
+
+function unregisterHotkeyShortcut() {
+  if (process.platform !== "darwin" || boolish(process.env.FIXEN_HOTKEY_NO_REGISTER)) return;
+  // defaults delete cannot remove nested dictionary keys. Use the preferences
+  // API so unrelated services and other pbs preferences remain intact.
+  const script = `ObjC.import("Foundation");
+function run(args) {
+  const prefs = $.NSUserDefaults.alloc.initWithSuiteName(args[0]);
+  const services = ObjC.deepUnwrap(prefs.dictionaryForKey("NSServicesStatus"));
+  if (!services || !args.slice(1).some(key => key in services)) return;
+  args.slice(1).forEach(key => delete services[key]);
+  prefs.setObjectForKey($(services), "NSServicesStatus");
+  if (!prefs.synchronize) throw Error("Could not save Services preferences");
+}`;
+  const r = spawnSync("osascript", ["-l", "JavaScript", "-e", script, "pbs",
+    ...[SERVICE_ID, "(null)"].map(id => `${id} - ${SERVICE_NAME} - runWorkflowAsService`)],
+  { encoding: "utf8", timeout: 5000 });
+  if (r.status !== 0) {
+    process.stderr.write("Could not remove the fixen Services shortcut preferences.\n");
+  }
 }
 
 function registerHotkeyShortcut() {

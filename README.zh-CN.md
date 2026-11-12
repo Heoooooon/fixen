@@ -303,7 +303,7 @@ fixen hotkey
 - `FIXEN_HOTKEY_NO_REGISTER=1 fixen hotkey` 只安装服务，不改动你的快捷键设置。
 - `fixen uninstall` 会连同其他内容一起删除这个快速操作。
 - 服务第一次在某个应用里替换文字前，macOS 会询问一次，这是正常的。
-- 如果服务菜单里的 **Fix with fixen** 没有显示快捷键（在 macOS 26 上遇到过），就按上面的路径在键盘快捷键里手动设一次 ⌃⌥⌘F。
+- 如果旧版本安装的 **Fix with fixen** 没有显示快捷键（macOS 26 上有此报告），请更新 fixen 后重新运行 `fixen hotkey`。也可以按上面的路径在键盘快捷键设置中手动指定 ⌃⌥⌘F。
 
 </details>
 

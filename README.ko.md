@@ -303,7 +303,7 @@ fixen hotkey
 - `FIXEN_HOTKEY_NO_REGISTER=1 fixen hotkey`는 단축키 설정은 건드리지 않고 서비스만 설치합니다.
 - `fixen uninstall`은 다른 것과 함께 빠른 동작도 지웁니다.
 - macOS는 서비스가 텍스트를 바꾸기 전에 앱마다 한 번 허용 여부를 묻습니다. 처음 뜨는 이 확인 창은 정상입니다.
-- 서비스 메뉴의 **Fix with fixen**에 단축키가 안 보이면(macOS 26에서 확인됨) 위의 키보드 단축키 설정에서 ⌃⌥⌘F를 한 번 직접 지정하세요.
+- 이전 버전에서 설치한 **Fix with fixen**에 단축키가 안 보이면(macOS 26에서 보고됨) fixen을 업데이트한 뒤 `fixen hotkey`를 다시 실행해 등록하세요. 위의 키보드 단축키 설정에서 ⌃⌥⌘F를 직접 지정할 수도 있습니다.
 
 </details>
 

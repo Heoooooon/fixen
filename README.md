@@ -303,7 +303,7 @@ This installs a **"Fix with fixen" quick action** (`~/Library/Services`) and bin
 - `FIXEN_HOTKEY_NO_REGISTER=1 fixen hotkey` installs the service without touching your shortcut settings.
 - `fixen uninstall` removes the quick action along with everything else.
 - macOS asks once per app before a service may replace text — that first prompt is expected.
-- If **Fix with fixen** shows no shortcut in the Services menu (seen on macOS 26), assign ⌃⌥⌘F once in the Keyboard Shortcuts pane above.
+- If an older installation shows no shortcut for **Fix with fixen** (reported on macOS 26), update fixen and rerun `fixen hotkey` to register it again. You can also assign ⌃⌥⌘F in the Keyboard Shortcuts pane above.
 
 </details>
 
